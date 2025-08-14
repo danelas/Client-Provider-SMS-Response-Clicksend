@@ -1,12 +1,14 @@
 # ClickSend SMS Response Handler
 
-A Flask application that processes SMS responses via ClickSend webhooks and sends appropriate replies based on the received message.
+A Flask application that processes SMS responses via ClickSend webhooks and manages customer-provider communication.
 
 ## Features
 
-- Receives SMS webhooks from ClickSend
-- Processes "yes"/"no" or "Y"/"N" responses
-- Sends appropriate confirmation or alternative provider message
+- Stores customer-provider relationships in a database
+- Receives form submissions with customer and provider details
+- Handles SMS webhooks from ClickSend
+- Processes "yes"/"no" or "Y"/"N" responses from providers
+- Sends appropriate confirmation or alternative provider messages
 - Deployable on Render
 
 ## Setup
@@ -21,11 +23,25 @@ A Flask application that processes SMS responses via ClickSend webhooks and send
    ```
    pip install -r requirements.txt
    ```
-4. Create a `.env` file with your ClickSend credentials:
+4. Create a `.env` file with your configuration:
    ```
+   # ClickSend Configuration
    CLICKSEND_USERNAME=your_username
    CLICKSEND_API_KEY=your_api_key
    CLICKSEND_FROM_NUMBER=+17865241227
+   
+   # Database Configuration (for production, use a proper database like PostgreSQL)
+   DATABASE_URL=sqlite:///bookings.db
+   
+   # Optional: Set to 'true' for debug mode
+   # DEBUG=true
+   ```
+5. Initialize the database:
+   ```
+   python
+   >>> from app import app, db
+   >>> with app.app_context():
+   ...     db.create_all()
    ```
 
 ## Running Locally
@@ -49,6 +65,33 @@ A Flask application that processes SMS responses via ClickSend webhooks and send
    - `CLICKSEND_API_KEY`: Your ClickSend API key
    - `CLICKSEND_FROM_NUMBER`: +17865241227
 4. Deploy the application
+
+## API Endpoints
+
+### 1. Create a New Booking
+```
+POST /api/booking
+Content-Type: application/json
+
+{
+    "customer_phone": "+1234567890",
+    "provider_phone": "+1987654321"
+}
+```
+
+### 2. ClickSend Webhook
+This endpoint is called by ClickSend when a provider responds to an SMS.
+```
+POST /webhook/sms
+```
+
+## Integration with Fluent Forms
+
+1. In your Fluent Forms submission handler, make a POST request to `/api/booking` with:
+   - `customer_phone`: The customer's phone number (format: +1234567890)
+   - `provider_phone`: The provider's phone number (format: +1234567890)
+
+2. The system will store this mapping and wait for the provider's response.
 
 ## ClickSend Webhook Setup
 
