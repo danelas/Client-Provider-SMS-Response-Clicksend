@@ -61,11 +61,14 @@ def send_sms(to_number, message):
 
 @app.route('/api/booking', methods=['POST'])
 def create_booking():
-    """Endpoint to receive form submissions and store customer-provider mapping"""
+    """Endpoint to receive form submissions and notify provider"""
     try:
         data = request.json
         customer_phone = data.get('customer_phone')
         provider_phone = data.get('provider_phone')
+        service_type = data.get('service_type', 'service')
+        address = data.get('address', 'the address')
+        datetime_str = data.get('datetime', 'scheduled time')
         
         if not customer_phone or not provider_phone:
             return jsonify({"status": "error", "message": "Missing customer_phone or provider_phone"}), 400
@@ -80,9 +83,20 @@ def create_booking():
         db.session.add(booking)
         db.session.commit()
         
+        # Send the detailed message to the provider
+        provider_message = (
+            f"Hey Dan, new request: {service_type} at {address} on {datetime_str}. "
+            f"Reply Y to accept or N if you are booked. Feel free to contact the client directly at {customer_phone}"
+        )
+        
+        success, message = send_sms(provider_phone, provider_message)
+        if not success:
+            return jsonify({"status": "error", "message": f"Failed to send SMS: {message}"}), 500
+        
         return jsonify({
             "status": "success",
-            "booking_id": booking.id
+            "booking_id": booking.id,
+            "message": "Provider notified successfully"
         }), 201
         
     except Exception as e:
