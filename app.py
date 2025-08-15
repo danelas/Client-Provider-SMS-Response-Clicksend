@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import os
-import requests
+import textmagic.rest
+from textmagic.rest import TextmagicRestClient
 from dotenv import load_dotenv
 from models import db, Booking
 from datetime import datetime, timedelta
@@ -21,43 +22,36 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-# ClickSend API credentials
-CLICKSEND_USERNAME = os.getenv('CLICKSEND_USERNAME')
-CLICKSEND_API_KEY = os.getenv('CLICKSEND_API_KEY')
-CLICKSEND_FROM_NUMBER = os.getenv('CLICKSEND_FROM_NUMBER', '+17865241227')
+# TextMagic API credentials
+TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
+TEXTMAGIC_API_KEY = os.getenv('TEXTMAGIC_API_KEY')
+TEXTMAGIC_FROM_NUMBER = os.getenv('TEXTMAGIC_FROM_NUMBER')
 
-# ClickSend API endpoint
-CLICKSEND_API_URL = 'https://rest.clicksend.com/v3/sms/send'
+# Initialize TextMagic client
+try:
+    textmagic_client = TextmagicRestClient(TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY)
+except Exception as e:
+    print(f"Error initializing TextMagic client: {str(e)}")
+    textmagic_client = None
 
 def send_sms(to_number, message):
-    """Send SMS using ClickSend API"""
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Basic {CLICKSEND_API_KEY}'
-    }
-    
-    payload = {
-        'messages': [
-            {
-                'source': 'python',
-                'from': CLICKSEND_FROM_NUMBER,
-                'to': to_number,
-                'body': message
-            }
-        ]
-    }
+    """Send SMS using TextMagic API"""
+    if not textmagic_client:
+        return False, "TextMagic client not initialized"
     
     try:
-        response = requests.post(
-            CLICKSEND_API_URL,
-            json=payload,
-            headers=headers,
-            auth=(CLICKSEND_USERNAME, '')
+        # Format number (remove any non-digit characters except +)
+        to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
+        
+        # Send message
+        result = textmagic_client.messages.create(
+            phones=to_number,
+            text=message,
+            sending_phone_number=TEXTMAGIC_FROM_NUMBER
         )
-        response.raise_for_status()
-        return True, "SMS sent successfully"
-    except requests.exceptions.RequestException as e:
-        return False, str(e)
+        return True, f"SMS sent with ID: {result.id}"
+    except Exception as e:
+        return False, f"TextMagic API error: {str(e)}"
 
 @app.route('/api/booking', methods=['POST'])
 def create_booking():
@@ -105,15 +99,15 @@ def create_booking():
 
 @app.route('/webhook/sms', methods=['POST'])
 def sms_webhook():
-    """Handle incoming SMS webhook from ClickSend"""
+    """Handle incoming SMS webhook from TextMagic"""
     try:
         data = request.json
         
-        # Extract relevant data from webhook
-        if 'data' in data and len(data['data']) > 0:
-            message_data = data['data'][0]
+        # Extract relevant data from TextMagic webhook
+        if 'message' in data:
+            message_data = data['message']
             provider_number = message_data.get('from', '')
-            message_text = message_data.get('body', '').strip().lower()
+            message_text = message_data.get('text', '').strip().lower()
             
             # Find the most recent pending booking for this provider
             booking = Booking.query.filter_by(

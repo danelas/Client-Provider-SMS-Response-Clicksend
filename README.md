@@ -1,6 +1,6 @@
-# ClickSend SMS Response Handler
+# TextMagic SMS Response Handler
 
-A Flask application that processes SMS responses via ClickSend webhooks and manages customer-provider communication.
+A Flask application that processes SMS responses via TextMagic webhooks and manages customer-provider communication.
 
 ## Features
 
@@ -25,10 +25,10 @@ A Flask application that processes SMS responses via ClickSend webhooks and mana
    ```
 4. Create a `.env` file with your configuration:
    ```
-   # ClickSend Configuration
-   CLICKSEND_USERNAME=your_username
-   CLICKSEND_API_KEY=your_api_key
-   CLICKSEND_FROM_NUMBER=+17865241227
+   # TextMagic Configuration
+   TEXTMAGIC_USERNAME=your_username
+   TEXTMAGIC_API_KEY=your_api_key
+   TEXTMAGIC_FROM_NUMBER=+1234567890  # Your TextMagic sender ID or number
    
    # Database Configuration (for production, use a proper database like PostgreSQL)
    DATABASE_URL=sqlite:///bookings.db
@@ -92,6 +92,18 @@ POST /webhook/sms
    - `provider_phone`: The provider's phone number (format: +1234567890)
 
 2. The system will store this mapping and wait for the provider's response.
+
+## TextMagic Webhook Setup
+
+1. Log in to your TextMagic account
+2. Go to Settings > Webhooks
+3. Click "Add Webhook"
+4. Set the following:
+   - **URL**: `https://your-render-app.onrender.com/webhook/sms`
+   - **Method**: `POST`
+   - **Content Type**: `application/json`
+   - **Events**: Select "Inbound message"
+5. Save the webhook
 
 ## ClickSend Webhook Setup
 
