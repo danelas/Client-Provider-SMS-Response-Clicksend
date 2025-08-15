@@ -106,7 +106,15 @@ def sms_webhook():
         # Extract relevant data from TextMagic webhook
         if 'message' in data:
             message_data = data['message']
-            provider_number = message_data.get('from', '')
+            
+            # Get the number this message was sent to
+            to_number = message_data.get('receiver', '')
+            
+            # Only process messages sent to our dedicated number
+            if to_number != TEXTMAGIC_FROM_NUMBER.replace('+', ''):
+                return jsonify({"status": "ignored", "message": "Not the dedicated number"}), 200
+                
+            provider_number = message_data.get('sender', '')
             message_text = message_data.get('text', '').strip().lower()
             
             # Find the most recent pending booking for this provider

@@ -95,15 +95,17 @@ POST /webhook/sms
 
 ## TextMagic Webhook Setup
 
+### For Dedicated Number
 1. Log in to your TextMagic account
-2. Go to Settings > Webhooks
-3. Click "Add Webhook"
-4. Set the following:
+2. Go to Settings > API & Webhooks
+3. Under "Reply Callback URLs", add a new entry:
    - **URL**: `https://your-render-app.onrender.com/webhook/sms`
    - **Method**: `POST`
-   - **Content Type**: `application/json`
-   - **Events**: Select "Inbound message"
-5. Save the webhook
+   - **Dedicated Number**: Select your dedicated number
+4. Save the settings
+
+### If Using Shared Webhook
+If you can't set up a dedicated webhook, the application will automatically filter messages by the `TEXTMAGIC_FROM_NUMBER` environment variable. Make sure this is set to your dedicated number.
 
 ## ClickSend Webhook Setup
 
