@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import os
-import textmagic.rest
-from textmagic.rest import TextmagicRestClient
+from textmagic import TextmagicRestClient
 from dotenv import load_dotenv
 from models import db, Booking
 from datetime import datetime, timedelta
