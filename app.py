@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import os
-from textmagic import TextmagicRestClient
+import base64
+import requests
 from dotenv import load_dotenv
 from models import db, Booking
 from datetime import datetime, timedelta
@@ -26,31 +27,43 @@ TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
 TEXTMAGIC_API_KEY = os.getenv('TEXTMAGIC_API_KEY')
 TEXTMAGIC_FROM_NUMBER = os.getenv('TEXTMAGIC_FROM_NUMBER')
 
-# Initialize TextMagic client
-try:
-    textmagic_client = TextmagicRestClient(TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY)
-except Exception as e:
-    print(f"Error initializing TextMagic client: {str(e)}")
-    textmagic_client = None
+# TextMagic API endpoint
+TEXTMAGIC_API_URL = 'https://rest.textmagic.com/api/v2/messages'
 
 def send_sms(to_number, message):
     """Send SMS using TextMagic API"""
-    if not textmagic_client:
-        return False, "TextMagic client not initialized"
-    
     try:
         # Format number (remove any non-digit characters except +)
         to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
         
-        # Send message
-        result = textmagic_client.messages.create(
-            phones=to_number,
-            text=message,
-            sending_phone_number=TEXTMAGIC_FROM_NUMBER
+        # Create Basic Auth header
+        auth_string = f"{TEXTMAGIC_USERNAME}:{TEXTMAGIC_API_KEY}"
+        auth_token = base64.b64encode(auth_string.encode()).decode('utf-8')
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-TM-Username': TEXTMAGIC_USERNAME,
+            'X-TM-Key': TEXTMAGIC_API_KEY
+        }
+        
+        payload = {
+            'text': message,
+            'phones': to_number,
+            'from': TEXTMAGIC_FROM_NUMBER
+        }
+        
+        response = requests.post(
+            TEXTMAGIC_API_URL,
+            json=payload,
+            headers=headers
         )
-        return True, f"SMS sent with ID: {result.id}"
+        
+        if response.status_code == 201:
+            return True, f"SMS sent with ID: {response.json().get('id')}"
+        else:
+            return False, f"TextMagic API error: {response.text}"
     except Exception as e:
-        return False, f"TextMagic API error: {str(e)}"
+        return False, f"Error sending SMS: {str(e)}"
 
 @app.route('/api/booking', methods=['POST'])
 def create_booking():

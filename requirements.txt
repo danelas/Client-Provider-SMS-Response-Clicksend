@@ -2,4 +2,4 @@ flask==2.3.3
 python-dotenv==1.0.0
 gunicorn==21.2.0
 flask-sqlalchemy==3.1.1
-textmagic==2.0.1589
+requests==2.31.0
