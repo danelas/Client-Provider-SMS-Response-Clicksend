@@ -98,16 +98,27 @@ def create_booking():
         if not provider:
             return jsonify({"status": "error", "message": "Provider not found"}), 404
         
-        # Create new booking
-        booking = Booking(
-            customer_phone=data['customer_phone'],
-            provider_phone=provider['phone'],
-            provider_id=data['provider_id'],
-            service_type=data['service_type'],
-            address=data['address'],
-            appointment_time=datetime.fromisoformat(data['datetime']),
-            status='pending'
-        )
+        # Parse the datetime string
+        try:
+            # Try parsing with AM/PM format first
+            try:
+                appointment_dt = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
+            except ValueError:
+                # Fall back to ISO format if AM/PM format fails
+                appointment_dt = datetime.fromisoformat(data['datetime'])
+                
+            # Create new booking
+            booking = Booking(
+                customer_phone=data['customer_phone'],
+                provider_phone=provider['phone'],
+                provider_id=data['provider_id'],
+                service_type=data['service_type'],
+                address=data['address'],
+                appointment_time=appointment_dt,
+                status='pending'
+            )
+        except (ValueError, TypeError) as e:
+            return jsonify({"status": "error", "message": f"Invalid datetime format. Use MM/DD/YYYY hh:mm AM/PM format. Error: {str(e)}"}), 400
         
         db.session.add(booking)
         db.session.commit()
