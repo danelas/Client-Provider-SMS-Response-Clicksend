@@ -9,10 +9,10 @@
   "provider8": { "name": "Angela", "phone": "+17192467896" },
   "provider9": { "name": "Gina", "phone": "+15618434462" },
   "provider10": { "name": "Dan", "phone": "+19546144683" },
-  "provider11": { "name": "Janine Jardula", "phone": "+17542812489" },
-  "provider12": { "name": "LaTanya Wright", "phone": "+15619081469" },
-  "provider13": { "name": "Gwendoline Joyce Dalmacio", "phone": "+19547621280" },
-  "provider14": { "name": "Laura Oliveira", "phone": "+19549104255" },
-  "provider15": { "name": "Marie Cote", "phone": "+19549903408" },
+  "provider11": { "name": "Janine", "phone": "+17542812489" },
+  "provider12": { "name": "LaTanya", "phone": "+15619081469" },
+  "provider13": { "name": "Gwendoline", "phone": "+19547621280" },
+  "provider14": { "name": "Laura", "phone": "+19549104255" },
+  "provider15": { "name": "Marie", "phone": "+19549903408" },
   "test_provider": { "name": "Test Provider", "phone": "+17865241227" }
 }
