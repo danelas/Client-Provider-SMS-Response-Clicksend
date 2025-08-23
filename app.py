@@ -46,15 +46,19 @@ def get_provider(provider_id):
         print(f"Error loading providers: {str(e)}")
         return None
 
-def send_sms(to_number, message):
+def send_sms(to_number, message, from_number=None):
     """Send SMS using TextMagic API"""
     try:
         # Format number (remove any non-digit characters except +)
         to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
         
-        # Create Basic Auth header
-        auth_string = f"{TEXTMAGIC_USERNAME}:{TEXTMAGIC_API_KEY}"
-        auth_token = base64.b64encode(auth_string.encode()).decode('utf-8')
+        # Use provided from_number or fall back to environment variable
+        sender_id = from_number or TEXTMAGIC_FROM_NUMBER
+        
+        # For TextMagic, if using a dedicated number, it should be in the international format
+        # without the + sign for the 'from' parameter
+        if sender_id and sender_id.startswith('+'):
+            sender_id = sender_id[1:]
         
         headers = {
             'Content-Type': 'application/json',
@@ -65,8 +69,11 @@ def send_sms(to_number, message):
         payload = {
             'text': message,
             'phones': to_number,
-            'from': TEXTMAGIC_FROM_NUMBER
         }
+        
+        # Only add 'from' if we have a sender_id
+        if sender_id:
+            payload['from'] = sender_id
         
         response = requests.post(
             TEXTMAGIC_API_URL,
@@ -123,13 +130,23 @@ def create_booking():
         db.session.add(booking)
         db.session.commit()
         
-        # Format the appointment time
+        # Format the appointment time for the message
         try:
-            appointment_time = datetime.fromisoformat(data['datetime'].replace('Z', '+00:00'))
-            formatted_time = appointment_time.strftime('%m/%d/%Y %-I:%M %p')
-        except (ValueError, TypeError) as e:
+            # First try to parse the date if it's a string
+            if isinstance(data['datetime'], str):
+                try:
+                    # Try parsing as MM/DD/YYYY hh:mm AM/PM
+                    dt = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
+                except ValueError:
+                    # Fall back to ISO format
+                    dt = datetime.fromisoformat(data['datetime'].replace('Z', '+00:00'))
+            else:
+                dt = data['datetime']
+                
+            formatted_time = dt.strftime('%m/%d/%Y %-I:%M %p')
+        except Exception as e:
             print(f"Error formatting datetime {data['datetime']}: {str(e)}")
-            formatted_time = data['datetime']  # Fallback to raw string if parsing fails
+            formatted_time = str(data['datetime'])  # Fallback to string representation
             
         # Send SMS to provider with the requested format
         message = (
