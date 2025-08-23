@@ -5,10 +5,13 @@ A Flask application that processes SMS responses via TextMagic webhooks and mana
 ## Features
 
 - Stores customer-provider relationships in a database
-- Receives form submissions with customer and provider details
-- Handles SMS webhooks from ClickSend
+- Uses provider IDs (e.g., `prov_amy`) to look up provider details
+- Maintains a JSON file of providers with their contact information
+- Receives form submissions with customer details and provider ID
+- Handles SMS webhooks from TextMagic
 - Processes "yes"/"no" or "Y"/"N" responses from providers
-- Sends appropriate confirmation or alternative provider messages
+- Sends detailed confirmation or alternative provider messages
+- Fallback to test number if primary provider fails
 - Deployable on Render
 
 ## Setup
@@ -25,16 +28,19 @@ A Flask application that processes SMS responses via TextMagic webhooks and mana
    ```
 4. Create a `.env` file with your configuration:
    ```
-   # TextMagic Configuration
+   # Environment Variables
+
+   # Database
+   DATABASE_URL=sqlite:///bookings.db
+
+   # TextMagic API
    TEXTMAGIC_USERNAME=your_username
    TEXTMAGIC_API_KEY=your_api_key
-   TEXTMAGIC_FROM_NUMBER=+1234567890  # Your TextMagic sender ID or number
-   
-   # Database Configuration (for production, use a proper database like PostgreSQL)
-   DATABASE_URL=sqlite:///bookings.db
-   
-   # Optional: Set to 'true' for debug mode
-   # DEBUG=true
+   TEXTMAGIC_FROM_NUMBER=+1234567890  # Your TextMagic dedicated number
+
+   # Optional
+   FLASK_DEBUG=1  # Set to 0 in production
+   TEST_PHONE_NUMBER=+1234567890  # For testing and fallback
    ```
 5. Initialize the database:
    ```
