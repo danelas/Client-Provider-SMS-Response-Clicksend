@@ -145,80 +145,80 @@ def sms_webhook():
         provider_number = message_data.get('sender', message_data.get('from', ''))
         message_text = message_data.get('text', message_data.get('body', '')).strip().lower()
             
-            # Find the most recent pending booking for this provider
-            booking = Booking.query.filter_by(
-                provider_phone=provider_number,
-                status='pending'
-            ).order_by(Booking.created_at.desc()).first()
+        # Find the most recent pending booking for this provider
+        booking = Booking.query.filter_by(
+            provider_phone=provider_number,
+            status='pending'
+        ).order_by(Booking.created_at.desc()).first()
 
-            if not booking:
-                print(f"No pending booking found for provider: {provider_number}")
-                return jsonify({"status": "ignored", "message": "No pending booking found for this provider"}), 200
+        if not booking:
+            print(f"No pending booking found for provider: {provider_number}")
+            return jsonify({"status": "ignored", "message": "No pending booking found for this provider"}), 200
 
-            # Process the response
-            if message_text in ['y', 'yes']:
-                try:
-                    # Update booking status
-                    booking.status = 'confirmed'
-                    booking.updated_at = datetime.utcnow()
-                    db.session.commit()
+        # Process the response
+        if message_text in ['y', 'yes']:
+            try:
+                # Update booking status
+                booking.status = 'confirmed'
+                booking.updated_at = datetime.utcnow()
+                db.session.commit()
 
-                    # Send confirmation to customer
-                    customer_message = "You are confirmed with the provider"
-                    success, msg = send_sms(booking.customer_phone, customer_message)
-                    if not success:
-                        print(f"Failed to send confirmation to customer: {msg}")
-
-                    # Send acknowledgment to provider
-                    ack_message = "You've confirmed the booking. The customer has been notified."
-                    success, msg = send_sms(provider_number, ack_message)
-                    if not success:
-                        print(f"Failed to send ack to provider: {msg}")
-
-                    print(f"Booking {booking.id} confirmed successfully")
-                    return jsonify({"status": "success", "message": "Booking confirmed"})
-
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"Error confirming booking: {str(e)}")
-                    return jsonify({"status": "error", "message": "Failed to confirm booking"}), 500
-
-            elif message_text in ['n', 'no']:
-                try:
-                    # Update booking status
-                    booking.status = 'rejected'
-                    booking.updated_at = datetime.utcnow()
-                    db.session.commit()
-
-                    # Send alternative message to customer
-                    alt_message = (
-                        "Hi, we are sorry for the inconvenience, but the provider you selected is not available. "
-                        "You can book with another provider here: goldtouchmobile.com/providers. Thanks!"
-                    )
-                    success, msg = send_sms(booking.customer_phone, alt_message)
-                    if not success:
-                        print(f"Failed to send rejection to customer: {msg}")
-
-                    print(f"Booking {booking.id} rejected successfully")
-                    return jsonify({"status": "success", "message": "Booking rejected"})
-
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"Error rejecting booking: {str(e)}")
-                    return jsonify({"status": "error", "message": "Failed to reject booking"}), 500
-
-            else:
-                # Not a valid response, ask for Y/N
-                response_message = (
-                    "Please reply with 'Y' to confirm the booking or 'N' if you're not available. "
-                    "Thank you!"
-                )
-                success, msg = send_sms(provider_number, response_message)
+                # Send confirmation to customer
+                customer_message = "You are confirmed with the provider"
+                success, msg = send_sms(booking.customer_phone, customer_message)
                 if not success:
-                    print(f"Failed to send instructions: {msg}")
-                
-                print(f"Received invalid response: {message_text}")
-                return jsonify({"status": "ignored", "message": "Invalid response, sent instructions"})
+                    print(f"Failed to send confirmation to customer: {msg}")
+
+                # Send acknowledgment to provider
+                ack_message = "You've confirmed the booking. The customer has been notified."
+                success, msg = send_sms(provider_number, ack_message)
+                if not success:
+                    print(f"Failed to send ack to provider: {msg}")
+
+                print(f"Booking {booking.id} confirmed successfully")
+                return jsonify({"status": "success", "message": "Booking confirmed"})
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error confirming booking: {str(e)}")
+                return jsonify({"status": "error", "message": "Failed to confirm booking"}), 500
+
+        elif message_text in ['n', 'no']:
+            try:
+                # Update booking status
+                booking.status = 'rejected'
+                booking.updated_at = datetime.utcnow()
+                db.session.commit()
+
+                # Send alternative message to customer
+                alt_message = (
+                    "Hi, we are sorry for the inconvenience, but the provider you selected is not available. "
+                    "You can book with another provider here: goldtouchmobile.com/providers. Thanks!"
+                )
+                success, msg = send_sms(booking.customer_phone, alt_message)
+                if not success:
+                    print(f"Failed to send rejection to customer: {msg}")
+
+                print(f"Booking {booking.id} rejected successfully")
+                return jsonify({"status": "success", "message": "Booking rejected"})
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error rejecting booking: {str(e)}")
+                return jsonify({"status": "error", "message": "Failed to reject booking"}), 500
+
+        else:
+            # Not a valid response, ask for Y/N
+            response_message = (
+                "Please reply with 'Y' to confirm the booking or 'N' if you're not available. "
+                "Thank you!"
+            )
+            success, msg = send_sms(provider_number, response_message)
+            if not success:
+                print(f"Failed to send instructions: {msg}")
+            
+            print(f"Received invalid response: {message_text}")
+            return jsonify({"status": "ignored", "message": "Invalid response, sent instructions"})
 
     except Exception as e:
         import traceback
