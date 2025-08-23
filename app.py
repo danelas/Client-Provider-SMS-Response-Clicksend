@@ -157,21 +157,34 @@ def create_booking():
         print(f"Error in create_booking: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
-@app.route('/webhook/sms', methods=['GET', 'POST'])
+@app.route('/webhook/sms', methods=['GET', 'POST', 'PUT'])
 def sms_webhook():
     """Handle incoming SMS webhooks from TextMagic"""
     # Handle webhook validation (GET request)
     if request.method == 'GET':
         return jsonify({"status": "ok"}), 200
         
-    # Handle incoming message (POST request)
+    # Log all incoming requests for debugging
+    print(f"Incoming {request.method} request to webhook")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Raw data: {request.get_data()}")
+    
+    # Handle incoming message (POST/PUT request)
     try:
         # Get JSON data from request
-        if not request.is_json:
-            return jsonify({"status": "error", "message": "Invalid content type"}), 400
-            
-        data = request.get_json()
-        print(f"Received webhook data: {data}")
+        if request.is_json:
+            data = request.get_json()
+        else:
+            # Try to parse as form data
+            data = request.form.to_dict()
+            if not data:
+                # Try to parse as raw text
+                try:
+                    data = json.loads(request.get_data().decode('utf-8'))
+                except:
+                    return jsonify({"status": "error", "message": "Invalid content type"}), 400
+                    
+        print(f"Parsed webhook data: {data}")
         
         message_data = data.get('message', {}) or data
         
