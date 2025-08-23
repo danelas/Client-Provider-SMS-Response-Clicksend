@@ -39,9 +39,25 @@ TEST_PROVIDER_ID = 'test_provider'
 def get_provider(provider_id):
     """Look up provider details by ID"""
     try:
+        if not provider_id:
+            print("Error: No provider ID provided")
+            return None
+            
         with open(PROVIDERS_FILE, 'r') as f:
             providers = json.load(f)
-        return providers.get(provider_id, providers.get(TEST_PROVIDER_ID))
+            
+        # First try to get the exact provider
+        provider = providers.get(provider_id)
+        
+        if not provider:
+            print(f"Error: Provider with ID '{provider_id}' not found in providers.json")
+            # List available provider IDs for debugging
+            available_ids = list(providers.keys())
+            print(f"Available provider IDs: {available_ids}")
+            return None
+            
+        return provider
+        
     except Exception as e:
         print(f"Error loading providers: {str(e)}")
         return None
