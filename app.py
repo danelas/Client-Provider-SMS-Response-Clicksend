@@ -122,10 +122,14 @@ def create_booking():
         print(f"Parsed JSON data: {data}")
         
         # Validate required fields
-        required_fields = ['customer_phone', 'provider_id', 'service_type', 'address', 'datetime']
+        required_fields = ['customer_phone', 'provider_id', 'service_type', 'datetime']
         for field in required_fields:
             if field not in data or not data[field]:
                 return jsonify({"status": "error", "message": f"Missing required field: {field}"}), 400
+                
+        # Set default empty address if not provided
+        if 'address' not in data or not data['address']:
+            data['address'] = 'Address not provided'
         
         # Look up provider details
         provider = get_provider(data['provider_id'])
