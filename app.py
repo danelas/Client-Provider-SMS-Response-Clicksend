@@ -108,7 +108,18 @@ def send_sms(to_number, message, from_number=None):
 def create_booking():
     """Handle form submission and send SMS to provider"""
     try:
-        data = request.json
+        print("=== NEW BOOKING REQUEST ===")
+        print(f"Request headers: {dict(request.headers)}")
+        print(f"Request content type: {request.content_type}")
+        print(f"Raw request data: {request.data}")
+        
+        if not request.is_json:
+            error_msg = "Request must be JSON"
+            print(f"ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 400
+            
+        data = request.get_json()
+        print(f"Parsed JSON data: {data}")
         
         # Validate required fields
         required_fields = ['customer_phone', 'provider_id', 'service_type', 'address', 'datetime']
