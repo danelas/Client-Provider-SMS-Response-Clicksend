@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from models import db, Booking
 from datetime import datetime, timedelta
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -145,6 +146,9 @@ def create_booking():
                 # Fall back to ISO format if AM/PM format fails
                 appointment_dt = datetime.fromisoformat(data['datetime'])
                 
+            # Calculate response deadline (15 minutes from now)
+            response_deadline = datetime.utcnow() + timedelta(minutes=15)
+            
             # Create new booking
             booking = Booking(
                 customer_phone=data['customer_phone'],
@@ -153,7 +157,8 @@ def create_booking():
                 service_type=data['service_type'],
                 address=data['address'],
                 appointment_time=appointment_dt,
-                status='pending'
+                status='pending',
+                response_deadline=response_deadline
             )
         except (ValueError, TypeError) as e:
             return jsonify({"status": "error", "message": f"Invalid datetime format. Use MM/DD/YYYY hh:mm AM/PM format. Error: {str(e)}"}), 400
@@ -179,12 +184,19 @@ def create_booking():
             print(f"Error formatting datetime {data['datetime']}: {str(e)}")
             formatted_time = str(data['datetime'])  # Fallback to string representation
             
-        # Send SMS to provider with the requested format
+        # Format deadline in provider's local time (ET timezone)
+        et = pytz.timezone('US/Eastern')
+        deadline_et = response_deadline.astimezone(et)
+        deadline_str = deadline_et.strftime('%-I:%M %p ET')
+        
+        # Send SMS to provider with the requested format and deadline
         message = (
             f"Hey {provider['name']}, new request: {data['service_type']} "
             f"at {data['address']} on {formatted_time}. "
-            f"Reply Y to accept or N if you are booked. "
-            f"Feel free to contact the client directly at {data['customer_phone']}"
+            f"\n\nPlease reply with:\n"
+            f"Y to ACCEPT or N to DECLINE\n"
+            f"\nYou have until {deadline_str} to respond. "
+            f"\n\nClient: {data['customer_phone']}"
         )
         
         # Log the SMS attempt
@@ -420,6 +432,66 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 
+def check_expired_bookings():
+    """Background task to check for and handle expired bookings"""
+    with app.app_context():
+        try:
+            now = datetime.utcnow()
+            expired_bookings = Booking.query.filter(
+                Booking.status == 'pending',
+                Booking.response_deadline <= now
+            ).all()
+            
+            for booking in expired_bookings:
+                try:
+                    # Update booking status
+                    booking.status = 'expired'
+                    booking.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    
+                    # Notify customer
+                    alt_message = (
+                        f"We're sorry, but the provider hasn't responded to your booking request. "
+                        f"We're working to find you an alternative provider. "
+                        f"You can also book with another provider here: goldtouchmobile.com/providers.\n\n"
+                        "We apologize for any inconvenience and hope to serve you soon!"
+                    )
+                    success, msg = send_sms(booking.customer_phone, alt_message)
+                    if not success:
+                        print(f"Failed to send expiration notice to customer: {msg}")
+                    
+                    print(f"Marked booking {booking.id} as expired and notified customer")
+                    
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"Error processing expired booking {booking.id}: {str(e)}")
+                    
+        except Exception as e:
+            print(f"Error in check_expired_bookings: {str(e)}")
+
+def start_background_tasks():
+    """Start background tasks"""
+    from apscheduler.schedulers.background import BackgroundScheduler
+    
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=check_expired_bookings,
+        trigger='interval',
+        minutes=1,  # Check every minute
+        id='expired_bookings_check',
+        name='Check for expired bookings',
+        replace_existing=True
+    )
+    scheduler.start()
+    return scheduler
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('DEBUG', 'false').lower() == 'true')
+    # Start background tasks
+    scheduler = start_background_tasks()
+    
+    # Start the web server
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true')
+    
+    # Shut down the scheduler when the app stops
+    scheduler.shutdown()
