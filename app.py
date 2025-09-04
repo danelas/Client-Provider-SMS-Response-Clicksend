@@ -149,71 +149,86 @@ def create_booking():
             # Calculate response deadline (15 minutes from now)
             response_deadline = datetime.utcnow() + timedelta(minutes=15)
             
-            # Create new booking
+            # Extract customer name from form data (handling both direct and nested formats)
+            customer_name = ''
+            if 'name' in data:
+                customer_name = data['name']
+            elif 'names' in data and isinstance(data['names'], dict) and 'First Name' in data['names']:
+                customer_name = data['names']['First Name']
+                
+            # Create a new booking
             booking = Booking(
                 customer_phone=data['customer_phone'],
-                provider_phone=provider['phone'],
+                customer_name=customer_name,  # Store the customer name
                 provider_id=data['provider_id'],
                 service_type=data['service_type'],
-                address=data['address'],
+                address=data.get('address', ''),
                 appointment_time=appointment_dt,
                 status='pending',
                 response_deadline=response_deadline
             )
-        except (ValueError, TypeError) as e:
-            return jsonify({"status": "error", "message": f"Invalid datetime format. Use MM/DD/YYYY hh:mm AM/PM format. Error: {str(e)}"}), 400
-        
-        db.session.add(booking)
-        db.session.commit()
-        
-        # Format the appointment time for the message
-        try:
-            # First try to parse the date if it's a string
-            if isinstance(data['datetime'], str):
-                try:
-                    # Try parsing as MM/DD/YYYY hh:mm AM/PM
-                    dt = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
-                except ValueError:
-                    # Fall back to ISO format
-                    dt = datetime.fromisoformat(data['datetime'].replace('Z', '+00:00'))
-            else:
-                dt = data['datetime']
-                
-            formatted_time = dt.strftime('%m/%d/%Y %-I:%M %p')
-        except Exception as e:
-            print(f"Error formatting datetime {data['datetime']}: {str(e)}")
-            formatted_time = str(data['datetime'])  # Fallback to string representation
             
-        # Format deadline in provider's local time (ET timezone)
-        et = pytz.timezone('US/Eastern')
-        deadline_et = response_deadline.astimezone(et)
-        deadline_str = deadline_et.strftime('%-I:%M %p ET')
-        
-        # Send SMS to provider with the requested format and deadline (without customer phone number)
-        message = (
-            f"Hey {provider['name']}, new request: {data['service_type']} "
-            f"at {data['address']} on {formatted_time}. "
-            f"\n\nPlease reply with:\n"
-            f"Y to ACCEPT or N to DECLINE\n"
-            f"\nYou have until {deadline_str} to respond."
-        )
-        
-        # Log the SMS attempt
-        print(f"Sending SMS to provider {provider['name']} ({provider['phone']}): {message}")
-        
-        success, result = send_sms(provider['phone'], message)
-        if not success:
-            print(f"Failed to send SMS: {result}")
-            # Fallback to test number if available
-            test_provider = get_provider(TEST_PROVIDER_ID)
-            if test_provider and test_provider['phone'] != provider['phone']:
-                print(f"Falling back to test number: {test_provider['phone']}")
-                success, result = send_sms(test_provider['phone'], 
-                                         f"[TEST] Original recipient failed ({provider['phone']}):\n{message}")
-                if not success:
-                    return jsonify({"status": "error", "message": f"Failed to send SMS to both provider and test number: {result}"}), 500
-            else:
-                return jsonify({"status": "error", "message": f"Failed to send SMS to provider: {result}"}), 500
+            db.session.add(booking)
+            db.session.commit()
+            
+            # Format the appointment time for the message
+            try:
+                # First try to parse the date if it's a string
+                if isinstance(data['datetime'], str):
+                    try:
+                        # Try parsing as MM/DD/YYYY hh:mm AM/PM
+                        dt = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
+                    except ValueError:
+                        # Fall back to ISO format
+                        dt = datetime.fromisoformat(data['datetime'].replace('Z', '+00:00'))
+                else:
+                    dt = data['datetime']
+                    
+                formatted_time = dt.strftime('%m/%d/%Y %-I:%M %p')
+            except Exception as e:
+                print(f"Error formatting datetime {data['datetime']}: {str(e)}")
+                formatted_time = str(data['datetime'])  # Fallback to string representation
+                
+            # Format deadline in provider's local time (ET timezone)
+            et = pytz.timezone('US/Eastern')
+            deadline_et = response_deadline.astimezone(et)
+            deadline_str = deadline_et.strftime('%-I:%M %p ET')
+            
+            # Send SMS to provider with the requested format and deadline (without customer phone number)
+            message = (
+                f"Hey {provider['name']}, new request: {data['service_type']} "
+                f"at {data['address']} on {formatted_time}. "
+                f"\n\nPlease reply with:\n"
+                f"Y to ACCEPT or N to DECLINE\n"
+                f"\nYou have until {deadline_str} to respond."
+            )
+            
+            # Log the SMS attempt
+            print(f"Sending SMS to provider {provider['name']} ({provider['phone']}): {message}")
+            
+            success, result = send_sms(provider['phone'], message)
+            if not success:
+                print(f"Failed to send SMS: {result}")
+                # Fallback to test number if available
+                test_provider = get_provider(TEST_PROVIDER_ID)
+                if test_provider and test_provider['phone'] != provider['phone']:
+                    print(f"Falling back to test number: {test_provider['phone']}")
+                    success, result = send_sms(test_provider['phone'], 
+                                             f"[TEST] Original recipient failed ({provider['phone']}):\n{message}")
+                    if not success:
+                        return jsonify({"status": "error", "message": f"Failed to send SMS to both provider and test number: {result}"}), 500
+                else:
+                    return jsonify({"status": "error", "message": f"Failed to send SMS to provider: {result}"}), 500
+            
+            return jsonify({
+                "status": "success", 
+                "message": "Booking created and notification sent",
+                "provider": {"name": provider['name'], "phone": provider['phone']}
+            })
+            
+        except (ValueError, TypeError) as e:
+            db.session.rollback()
+            return jsonify({"status": "error", "message": f"Invalid datetime format. Use MM/DD/YYYY hh:mm AM/PM format. Error: {str(e)}"}), 400
         
         return jsonify({
             "status": "success", 
