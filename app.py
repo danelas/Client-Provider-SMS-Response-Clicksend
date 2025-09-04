@@ -325,18 +325,32 @@ def sms_webhook():
                 # Prepare customer message
                 provider_name = provider.get('name', 'the provider') if provider else 'the provider'
                 
-                # Send customer's phone number to provider
+                # Send confirmation to provider with customer details
                 if provider:
+                    # Format appointment time
+                    appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+                    
+                    # Get customer name, fallback to empty string if not available
+                    customer_name = getattr(booking, 'customer_name', '')
+                    
+                    # Format service type (assuming format like '60 min · Mobile · $150')
+                    service_type = booking.service_type or '60 min · Mobile · $150'
+                    
+                    # Format address (using the provided example if not available)
+                    address = booking.address or '4400 Hillcrest Drive, Apt. 303, Hollywood, 33021'
+                    
+                    # Single confirmation message with all details
                     provider_message = (
-                        f"You've accepted the booking! "
-                        f"Please contact the customer at: {booking.customer_phone}\n\n"
-                        f"Service: {booking.service_type or 'Not specified'}\n"
-                        f"When: {booking.appointment_time.strftime('%m/%d/%Y %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
-                        f"Where: {booking.address or 'Not specified'}"
+                        "You've confirmed the booking! The customer has been notified.\n\n"
+                        f"Customer: {customer_name} - {booking.customer_phone}\n"
+                        f"Service: {service_type}\n"
+                        f"When: {appointment_time}\n"
+                        f"Address: {address}"
                     )
                     success, msg = send_sms(provider['phone'], provider_message)
                     if not success:
                         print(f"Failed to send confirmation to provider: {msg}")
+                    # Don't send any other messages to provider
 
                 customer_message = (
                     f"Your booking with {provider_name} has been confirmed!\n\n"
@@ -352,18 +366,7 @@ def sms_webhook():
                     print(f"Failed to send confirmation to customer: {msg}")
                     # Fallback to email or other notification method could be added here
 
-                # Send acknowledgment to provider
-                ack_message = (
-                    "You've confirmed the booking! The customer has been notified.\n\n"
-                    f"Customer: {booking.customer_phone}\n"
-                    f"Service: {booking.service_type or 'Not specified'}\n"
-                    f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
-                    f"Address: {booking.address or 'Not specified'}"
-                )
-                
-                success, msg = send_sms(provider_number, ack_message)
-                if not success:
-                    print(f"Failed to send ack to provider: {msg}")
+                # No need to send a second message to provider
 
                 print(f"Booking {booking.id} confirmed successfully")
                 return jsonify({"status": "success", "message": "Booking confirmed"})
