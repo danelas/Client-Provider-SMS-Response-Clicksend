@@ -189,14 +189,13 @@ def create_booking():
         deadline_et = response_deadline.astimezone(et)
         deadline_str = deadline_et.strftime('%-I:%M %p ET')
         
-        # Send SMS to provider with the requested format and deadline
+        # Send SMS to provider with the requested format and deadline (without customer phone number)
         message = (
             f"Hey {provider['name']}, new request: {data['service_type']} "
             f"at {data['address']} on {formatted_time}. "
             f"\n\nPlease reply with:\n"
             f"Y to ACCEPT or N to DECLINE\n"
-            f"\nYou have until {deadline_str} to respond. "
-            f"\n\nClient: {data['customer_phone']}"
+            f"\nYou have until {deadline_str} to respond."
         )
         
         # Log the SMS attempt
@@ -325,6 +324,20 @@ def sms_webhook():
 
                 # Prepare customer message
                 provider_name = provider.get('name', 'the provider') if provider else 'the provider'
+                
+                # Send customer's phone number to provider
+                if provider:
+                    provider_message = (
+                        f"You've accepted the booking! "
+                        f"Please contact the customer at: {booking.customer_phone}\n\n"
+                        f"Service: {booking.service_type or 'Not specified'}\n"
+                        f"When: {booking.appointment_time.strftime('%m/%d/%Y %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+                        f"Where: {booking.address or 'Not specified'}"
+                    )
+                    success, msg = send_sms(provider['phone'], provider_message)
+                    if not success:
+                        print(f"Failed to send confirmation to provider: {msg}")
+
                 customer_message = (
                     f"Your booking with {provider_name} has been confirmed!\n\n"
                     f"Service: {booking.service_type or 'Not specified'}\n"
