@@ -109,10 +109,18 @@ def send_sms(to_number, message, from_number=None):
 def create_booking():
     """Handle form submission and send SMS to provider"""
     try:
-        print("=== NEW BOOKING REQUEST ===")
+        print("\n=== NEW BOOKING REQUEST ===")
         print(f"Request headers: {dict(request.headers)}")
         print(f"Request content type: {request.content_type}")
         print(f"Raw request data: {request.data}")
+        
+        # Log environment variables for debugging
+        print("\n=== ENVIRONMENT VARIABLES ===")
+        print(f"TEXTMAGIC_USERNAME: {'Set' if os.getenv('TEXTMAGIC_USERNAME') else 'Not set'}")
+        print(f"TEXTMAGIC_API_KEY: {'Set' if os.getenv('TEXTMAGIC_API_KEY') else 'Not set'}")
+        print(f"TEXTMAGIC_FROM_NUMBER: {os.getenv('TEXTMAGIC_FROM_NUMBER', 'Not set')}")
+        print(f"DATABASE_URL: {os.getenv('DATABASE_URL', 'sqlite:///bookings.db')}")
+        print("===========================\n")
         
         if not request.is_json:
             error_msg = "Request must be JSON"
@@ -122,20 +130,49 @@ def create_booking():
         data = request.get_json()
         print(f"Parsed JSON data: {data}")
         
+        # Log all received fields
+        print("\n=== RECEIVED DATA ===")
+        for key, value in data.items():
+            print(f"{key}: {value} (type: {type(value)})")
+        print("===================\n")
+        
         # Validate required fields
         required_fields = ['customer_phone', 'provider_id', 'service_type', 'datetime']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                return jsonify({"status": "error", "message": f"Missing required field: {field}"}), 400
-                
+        missing_fields = [field for field in required_fields if field not in data or not data[field]]
+        
+        if missing_fields:
+            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+            print(f"VALIDATION ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg, "missing_fields": missing_fields}), 400
+        
+        # Clean and validate phone number
+        phone = ''.join(c for c in str(data['customer_phone']) if c.isdigit() or c == '+')
+        if not phone:
+            error_msg = "Invalid phone number format"
+            print(f"VALIDATION ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 400
+            
+        # Normalize service type (replace middle dots with dashes)
+        if 'service_type' in data:
+            data['service_type'] = data['service_type'].replace('·', '-').replace('•', '-').strip()
+            print(f"Normalized service_type: {data['service_type']}")
+        
         # Set default empty address if not provided
         if 'address' not in data or not data['address']:
             data['address'] = 'Address not provided'
         
-        # Look up provider details
+        # Look up provider details with detailed logging
+        print(f"\n=== LOOKING UP PROVIDER ===")
+        print(f"Provider ID: {data['provider_id']}")
         provider = get_provider(data['provider_id'])
+        
         if not provider:
-            return jsonify({"status": "error", "message": "Provider not found"}), 404
+            error_msg = f"Provider with ID '{data['provider_id']}' not found"
+            print(f"PROVIDER ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 404
+            
+        print(f"Found provider: {provider}")
+        print("==========================\n")
         
         # Parse the datetime string
         try:
@@ -247,31 +284,55 @@ def sms_webhook():
     """Handle incoming SMS webhooks from TextMagic"""
     # Handle webhook validation (GET request)
     if request.method == 'GET':
+        print("Webhook validation request received")
         return jsonify({"status": "ok"}), 200
         
     # Log all incoming requests for debugging
-    print(f"Incoming {request.method} request to webhook")
+    print(f"\n=== INCOMING WEBHOOK REQUEST ===")
+    print(f"Method: {request.method}")
     print(f"Headers: {dict(request.headers)}")
+    print(f"Content-Type: {request.content_type}")
     print(f"Raw data: {request.get_data()}")
     
-    # Handle incoming message (POST/PUT request)
-    try:
-        # Get JSON data from request
-        if request.is_json:
-            data = request.get_json()
-        else:
-            # Try to parse as form data
-            data = request.form.to_dict()
-            if not data:
-                # Try to parse as raw text
-                try:
-                    data = json.loads(request.get_data().decode('utf-8'))
-                except:
-                    return jsonify({"status": "error", "message": "Invalid content type"}), 400
-                    
-        print(f"Parsed webhook data: {data}")
+    # Ensure proper content type
+    if not request.is_json and request.content_type != 'application/x-www-form-urlencoded':
+        error_msg = "Unsupported Media Type: Content-Type must be application/json or application/x-www-form-urlencoded"
+        print(f"ERROR: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg}), 400
         
+    # Parse the request data
+    data = {}
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        # Handle form data
+        data = request.form.to_dict()
+        
+    print(f"Parsed webhook data: {data}")
+    
+    # Validate required fields
+    if not data:
+        error_msg = "No data received in webhook"
+        print(f"ERROR: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg}), 400
+    
+    try:
+        # Process the incoming message
         message_data = data.get('message', {}) or data
+        print(f"Processing message: {message_data}")
+        
+        # Extract the SMS content and sender
+        text = message_data.get('text', '').strip().lower()
+        from_number = message_data.get('from', '')
+        
+        if not text or not from_number:
+            error_msg = "Missing required fields in webhook data"
+            print(f"ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 400
+            
+        print(f"Processing message from {from_number}: {text}")
+        
+        # If we got here, we have valid message data
         
         to_number = message_data.get('receiver', '') or message_data.get('to', '')
         if to_number:
