@@ -181,7 +181,9 @@ def create_booking():
         # Check database connection
         try:
             with app.app_context():
-                db.session.execute('SELECT 1')
+                # Proper way to execute a raw SQL query in SQLAlchemy 2.0
+                from sqlalchemy import text
+                db.session.execute(text('SELECT 1'))
                 print("Database connection successful")
         except Exception as e:
             error_msg = f"Database connection error: {str(e)}"
