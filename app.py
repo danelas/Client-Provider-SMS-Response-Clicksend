@@ -110,31 +110,83 @@ def create_booking():
     """Handle form submission and send SMS to provider"""
     try:
         print("\n=== NEW BOOKING REQUEST ===")
+        print(f"Time: {datetime.now().isoformat()}")
+        print(f"Request method: {request.method}")
         print(f"Request headers: {dict(request.headers)}")
         print(f"Request content type: {request.content_type}")
-        print(f"Raw request data: {request.data}")
+        print(f"Request data length: {len(request.data) if request.data else 0} bytes")
+        
+        # Log raw request data safely
+        try:
+            raw_data = request.get_data(as_text=True)
+            print(f"Raw request data (first 1000 chars): {raw_data[:1000]}")
+        except Exception as e:
+            print(f"Error reading raw request data: {str(e)}")
         
         # Log environment variables for debugging
         print("\n=== ENVIRONMENT VARIABLES ===")
         print(f"TEXTMAGIC_USERNAME: {'Set' if os.getenv('TEXTMAGIC_USERNAME') else 'Not set'}")
-        print(f"TEXTMAGIC_API_KEY: {'Set' if os.getenv('TEXTMAGIC_API_KEY') else 'Not set'}")
+        print(f"TEXTMAGIC_API_KEY: {'Set (first 4 chars shown)' + os.getenv('TEXTMAGIC_API_KEY', '')[:4] + '...' if os.getenv('TEXTMAGIC_API_KEY') else 'Not set'}")
         print(f"TEXTMAGIC_FROM_NUMBER: {os.getenv('TEXTMAGIC_FROM_NUMBER', 'Not set')}")
         print(f"DATABASE_URL: {os.getenv('DATABASE_URL', 'sqlite:///bookings.db')}")
         print("===========================\n")
         
-        if not request.is_json:
-            error_msg = "Request must be JSON"
+        # Check content type and parse data
+        content_type = request.headers.get('Content-Type', '').lower()
+        
+        # Debug: Log the raw request data
+        raw_data = request.get_data(as_text=True)
+        print(f"Raw request data: {raw_data}")
+        
+        try:
+            if 'application/json' in content_type:
+                if not raw_data.strip():
+                    raise ValueError("Empty JSON payload")
+                data = request.get_json(force=True)  # Force parsing even if content-type is wrong
+            elif 'application/x-www-form-urlencoded' in content_type:
+                data = request.form.to_dict()
+                print(f"Form data: {data}")
+                # Try to parse any JSON in the form data
+                for key in data:
+                    try:
+                        if isinstance(data[key], str) and (data[key].startswith('{') or data[key].startswith('[')):
+                            data[key] = json.loads(data[key])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            else:
+                # Try to auto-detect the content type
+                try:
+                    data = request.get_json(force=True)
+                    print("Auto-detected JSON data")
+                except:
+                    data = request.form.to_dict()
+                    print("Fell back to form data")
+                    
+            print(f"Parsed request data: {data}")
+            
+            if not data:
+                raise ValueError("No data found in request")
+                
+        except Exception as e:
+            error_msg = f"Error parsing request data: {str(e)}"
             print(f"ERROR: {error_msg}")
             return jsonify({"status": "error", "message": error_msg}), 400
-            
-        data = request.get_json()
-        print(f"Parsed JSON data: {data}")
         
         # Log all received fields
         print("\n=== RECEIVED DATA ===")
         for key, value in data.items():
             print(f"{key}: {value} (type: {type(value)})")
         print("===================\n")
+        
+        # Check database connection
+        try:
+            with app.app_context():
+                db.session.execute('SELECT 1')
+                print("Database connection successful")
+        except Exception as e:
+            error_msg = f"Database connection error: {str(e)}"
+            print(f"DATABASE ERROR: {error_msg}")
+            return jsonify({"status": "error", "message": "Database connection error"}), 500
         
         # Validate required fields
         required_fields = ['customer_phone', 'provider_id', 'service_type', 'datetime']
