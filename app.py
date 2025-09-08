@@ -225,6 +225,15 @@ def create_booking():
         # Look up provider details with detailed logging
         print(f"\n=== LOOKING UP PROVIDER ===")
         print(f"Provider ID: {data['provider_id']}")
+        
+        # Log all available provider IDs for debugging
+        try:
+            with open(PROVIDERS_FILE, 'r') as f:
+                all_providers = json.load(f)
+                print(f"Available provider IDs: {list(all_providers.keys())}")
+        except Exception as e:
+            print(f"Error loading providers file: {str(e)}")
+        
         provider = get_provider(data['provider_id'])
         
         if not provider:
@@ -234,6 +243,12 @@ def create_booking():
             
         print(f"Found provider: {provider}")
         print("==========================\n")
+        
+        # Log all received data for debugging
+        print("\n=== FULL REQUEST DATA ===")
+        print(f"Data type: {type(data)}")
+        print(f"Data content: {data}")
+        print("======================\n")
         
         # Parse the datetime string
         try:
