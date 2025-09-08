@@ -181,11 +181,20 @@ def create_booking():
         # Check database connection
         try:
             with app.app_context():
-                db.session.execute('SELECT 1')
-                print("Database connection successful")
+                # More robust database connection check for SQLAlchemy 2.0
+                from sqlalchemy import text
+                # Execute a simple query to verify connection
+                result = db.session.execute(text('SELECT 1')).scalar()
+                if result == 1:
+                    print("Database connection successful")
+                else:
+                    raise Exception("Unexpected database response")
         except Exception as e:
             error_msg = f"Database connection error: {str(e)}"
             print(f"DATABASE ERROR: {error_msg}")
+            # Log the full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
             return jsonify({"status": "error", "message": "Database connection error"}), 500
         
         # Validate required fields
