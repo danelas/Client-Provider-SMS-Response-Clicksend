@@ -262,13 +262,6 @@ def create_booking():
             # Calculate response deadline (15 minutes from now)
             response_deadline = datetime.utcnow() + timedelta(minutes=15)
             
-            # Extract customer name from form data (handling both direct and nested formats)
-            customer_name = ''
-            if 'name' in data:
-                customer_name = data['name']
-            elif 'names' in data and isinstance(data['names'], dict) and 'First Name' in data['names']:
-                customer_name = data['names']['First Name']
-                
             # Create a new booking
             try:
                 print("\n=== CREATING BOOKING ===")
@@ -278,7 +271,6 @@ def create_booking():
                 
                 booking = Booking(
                     customer_phone=data['customer_phone'],
-                    customer_name=customer_name,
                     provider_id=data['provider_id'],
                     provider_phone=provider['phone'],
                     service_type=data['service_type'],
