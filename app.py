@@ -274,6 +274,7 @@ def create_booking():
                 customer_phone=data['customer_phone'],
                 customer_name=customer_name,  # Store the customer name
                 provider_id=data['provider_id'],
+                provider_phone=provider['phone'],  # Add provider phone from the provider object
                 service_type=data['service_type'],
                 address=data.get('address', ''),
                 appointment_time=appointment_dt,
