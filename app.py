@@ -270,20 +270,38 @@ def create_booking():
                 customer_name = data['names']['First Name']
                 
             # Create a new booking
-            booking = Booking(
-                customer_phone=data['customer_phone'],
-                customer_name=customer_name,  # Store the customer name
-                provider_id=data['provider_id'],
-                provider_phone=provider['phone'],  # Add provider phone from the provider object
-                service_type=data['service_type'],
-                address=data.get('address', ''),
-                appointment_time=appointment_dt,
-                status='pending',
-                response_deadline=response_deadline
-            )
-            
-            db.session.add(booking)
-            db.session.commit()
+            try:
+                print("\n=== CREATING BOOKING ===")
+                print(f"Provider phone: {provider['phone']}")
+                print(f"Appointment time: {appointment_dt} (type: {type(appointment_dt)})")
+                print(f"Response deadline: {response_deadline} (type: {type(response_deadline)})")
+                
+                booking = Booking(
+                    customer_phone=data['customer_phone'],
+                    customer_name=customer_name,
+                    provider_id=data['provider_id'],
+                    provider_phone=provider['phone'],
+                    service_type=data['service_type'],
+                    address=data.get('address', ''),
+                    appointment_time=appointment_dt,
+                    status='pending',
+                    response_deadline=response_deadline
+                )
+                
+                print("Booking object created, adding to session...")
+                db.session.add(booking)
+                print("Committing to database...")
+                db.session.commit()
+                print("Successfully committed booking to database")
+                
+            except Exception as e:
+                print(f"\n=== ERROR CREATING BOOKING ===")
+                print(f"Error type: {type(e).__name__}")
+                print(f"Error message: {str(e)}")
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}")
+                db.session.rollback()
+                return jsonify({"status": "error", "message": f"Error creating booking: {str(e)}"}), 400
             
             # Format the appointment time for the message
             try:
