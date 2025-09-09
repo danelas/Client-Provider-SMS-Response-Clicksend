@@ -29,6 +29,7 @@ with app.app_context():
 TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
 TEXTMAGIC_API_KEY = os.getenv('TEXTMAGIC_API_KEY')
 TEXTMAGIC_FROM_NUMBER = os.getenv('TEXTMAGIC_FROM_NUMBER')
+TEXTMAGIC_API_BASE_URL = 'https://rest.textmagic.com'
 
 # TextMagic API endpoint
 TEXTMAGIC_API_URL = 'https://rest.textmagic.com/api/v2/messages'
@@ -108,12 +109,12 @@ def send_sms(to_number, message, from_number=None):
     print(f"Message: {message[:100]}..." if len(message) > 100 else f"Message: {message}")
     
     # Prepare the request
-    url = f"{TEXTMAGIC_API_BASE_URL}/api/v2/messages"
     headers = {
         "X-TM-Username": TEXTMAGIC_USERNAME,
         "X-TM-Key": TEXTMAGIC_API_KEY,
         "Content-Type": "application/json"
     }
+    url = TEXTMAGIC_API_URL
     
     data = {
         "text": message,
