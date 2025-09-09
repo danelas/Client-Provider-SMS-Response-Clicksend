@@ -65,45 +65,107 @@ def get_provider(provider_id):
 
 def send_sms(to_number, message, from_number=None):
     """Send SMS using TextMagic API"""
+    print("\n=== SEND_SMS FUNCTION CALLED ===")
+    print(f"Initial to_number: {to_number}")
+    print(f"Initial from_number: {from_number}")
+    print(f"Message length: {len(message)} characters")
+    
+    if not to_number:
+        error_msg = "Error: No recipient number provided"
+        print(error_msg)
+        return False, error_msg
+    
+    # Clean the phone number (remove all non-numeric characters except +)
+    original_to = to_number
+    to_number = ''.join(c for c in str(to_number) if c == '+' or c.isdigit())
+    print(f"Cleaned to_number: {to_number} (from: {original_to})")
+    
+    # If no country code is provided, assume US/Canada (+1)
+    if not to_number.startswith('+'):
+        to_number = f"1{to_number}"  # US/Canada default
+        print(f"Added US/Canada prefix: {to_number}")
+    
+    # If still no +, add it
+    if not to_number.startswith('+'):
+        to_number = f"+{to_number}"
+        print(f"Added + prefix: {to_number}")
+    
+    # If from_number is not provided, use the default from the environment
+    original_from = from_number
+    if not from_number:
+        from_number = TEXTMAGIC_FROM_NUMBER
+        print(f"Using default from_number: {from_number}")
+    
+    # Clean the from_number
+    if from_number:
+        from_number = ''.join(c for c in str(from_number) if c == '+' or c.isdigit())
+        print(f"Cleaned from_number: {from_number} (from: {original_from or 'None'})")
+    
+    # Print the message for debugging (without sensitive data)
+    print(f"\n=== SENDING SMS ===")
+    print(f"To: {to_number}")
+    print(f"From: {from_number}")
+    print(f"Message: {message[:100]}..." if len(message) > 100 else f"Message: {message}")
+    
+    # Prepare the request
+    url = f"{TEXTMAGIC_API_BASE_URL}/api/v2/messages"
+    headers = {
+        "X-TM-Username": TEXTMAGIC_USERNAME,
+        "X-TM-Key": TEXTMAGIC_API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "text": message,
+        "phones": to_number
+    }
+    
+    if from_number:
+        data["from"] = from_number
+    
+    print("\n=== REQUEST DETAILS ===")
+    print(f"URL: {url}")
+    print(f"Headers: {headers}")
+    print(f"Data: {data}")
+    
     try:
-        # Format number (remove any non-digit characters except +)
-        to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
+        print("\nSending request to TextMagic API...")
+        response = requests.post(url, headers=headers, json=data)
+        print(f"Response status code: {response.status_code}")
+        print(f"Response headers: {response.headers}")
         
-        # Use provided from_number or fall back to environment variable
-        sender_id = from_number or TEXTMAGIC_FROM_NUMBER
+        # Try to parse as JSON, but fall back to text if not JSON
+        try:
+            response_data = response.json()
+            print(f"Response JSON: {response_data}")
+        except ValueError:
+            response_text = response.text
+            print(f"Response text (not JSON): {response_text}")
+            response_data = {"raw_response": response_text}
         
-        # For TextMagic, if using a dedicated number, it should be in the international format
-        # without the + sign for the 'from' parameter
-        if sender_id and sender_id.startswith('+'):
-            sender_id = sender_id[1:]
+        response.raise_for_status()
         
-        headers = {
-            'Content-Type': 'application/json',
-            'X-TM-Username': TEXTMAGIC_USERNAME,
-            'X-TM-Key': TEXTMAGIC_API_KEY
-        }
+        print("SMS sent successfully.")
+        return True, "Message sent successfully"
         
-        payload = {
-            'text': message,
-            'phones': to_number,
-        }
+    except requests.exceptions.RequestException as e:
+        print("\n=== ERROR SENDING SMS ===")
+        error_msg = f"Failed to send SMS: {str(e)}"
+        print(error_msg)
         
-        # Only add 'from' if we have a sender_id
-        if sender_id:
-            payload['from'] = sender_id
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Status code: {e.response.status_code}")
+            print(f"Response headers: {e.response.headers}")
+            try:
+                error_data = e.response.json()
+                print(f"Error response JSON: {error_data}")
+                error_msg += f" (Status: {e.response.status_code}, Response: {error_data})"
+            except ValueError:
+                error_text = e.response.text
+                print(f"Error response text: {error_text}")
+                error_msg += f" (Status: {e.response.status_code}, Response: {error_text})"
         
-        response = requests.post(
-            TEXTMAGIC_API_URL,
-            json=payload,
-            headers=headers
-        )
-        
-        if response.status_code == 201:
-            return True, f"SMS sent with ID: {response.json().get('id')}"
-        else:
-            return False, f"TextMagic API error: {response.text}"
-    except Exception as e:
-        return False, f"Error sending SMS: {str(e)}"
+        return False, error_msg
 
 @app.route('/api/booking', methods=['POST'])
 def create_booking():
@@ -483,8 +545,13 @@ def sms_webhook():
         print(f"From number: {from_number}")
         print(f"Provider: {provider}")
         print(f"Booking ID: {booking.id if booking else 'None'}")
+        print(f"Customer phone: {booking.customer_phone if booking else 'N/A'}")
         
-        if message_text.lower() in ['y', 'yes']:
+        # Normalize the message text for comparison
+        normalized_text = message_text.strip().lower()
+        print(f"Normalized message text: '{normalized_text}'")
+        
+        if normalized_text in ['y', 'yes']:
             try:
                 print("Processing 'Y' response from provider")
                 # Update booking status
@@ -499,44 +566,61 @@ def sms_webhook():
                 
                 # Send confirmation to provider with customer details
                 if provider:
-                    # Format appointment time
-                    appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
-                    
-                    # Get customer name, fallback to empty string if not available
-                    customer_name = getattr(booking, 'customer_name', '')
-                    
-                    # Format service type (assuming format like '60 min · Mobile · $150')
-                    service_type = booking.service_type or '60 min · Mobile · $150'
-                    
-                    # Format address (using the provided example if not available)
-                    address = booking.address or '4400 Hillcrest Drive, Apt. 303, Hollywood, 33021'
-                    
-                    # Single confirmation message with all details
-                    provider_message = (
-                        "You've confirmed the booking! The customer has been notified.\n\n"
-                        f"Customer: {customer_name} - {booking.customer_phone}\n"
-                        f"Service: {service_type}\n"
-                        f"When: {appointment_time}\n"
-                        f"Address: {address}"
-                    )
-                    success, msg = send_sms(provider['phone'], provider_message)
-                    if not success:
-                        print(f"Failed to send confirmation to provider: {msg}")
-                    # Don't send any other messages to provider
+                    try:
+                        print("Preparing provider confirmation message...")
+                        # Format appointment time
+                        appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+                        
+                        # Get customer name, fallback to empty string if not available
+                        customer_name = getattr(booking, 'customer_name', '')
+                        
+                        # Format service type (assuming format like '60 min · Mobile · $150')
+                        service_type = booking.service_type or '60 min · Mobile · $150'
+                        
+                        # Format address (using the provided example if not available)
+                        address = booking.address or '4400 Hillcrest Drive, Apt. 303, Hollywood, 33021'
+                        
+                        # Single confirmation message with all details
+                        provider_message = (
+                            "You've confirmed the booking! The customer has been notified.\n\n"
+                            f"Customer: {customer_name} - {booking.customer_phone}\n"
+                            f"Service: {service_type}\n"
+                            f"When: {appointment_time}\n"
+                            f"Address: {address}"
+                        )
+                        print(f"Sending to provider {provider['phone']} message: {provider_message}")
+                        success, msg = send_sms(provider['phone'], provider_message)
+                        if success:
+                            print("Successfully sent confirmation to provider")
+                        else:
+                            print(f"Failed to send confirmation to provider: {msg}")
+                    except Exception as e:
+                        print(f"Error preparing/sending provider message: {str(e)}")
+                        import traceback
+                        print(f"Traceback: {traceback.format_exc()}")
 
-                customer_message = (
-                    f"Your booking with {provider_name} has been confirmed!\n\n"
-                    f"Service: {booking.service_type or 'Not specified'}\n"
-                    f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
-                    f"Address: {booking.address or 'Not specified'}\n\n"
-                    "Thank you for choosing our service!"
-                )
-                
-                # Send confirmation to customer
-                success, msg = send_sms(booking.customer_phone, customer_message)
-                if not success:
-                    print(f"Failed to send confirmation to customer: {msg}")
-                    # Fallback to email or other notification method could be added here
+                try:
+                    print("Preparing customer confirmation message...")
+                    customer_message = (
+                        f"Your booking with {provider_name} has been confirmed!\n\n"
+                        f"Service: {booking.service_type or 'Not specified'}\n"
+                        f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+                        f"Address: {booking.address or 'Not specified'}\n\n"
+                        "Thank you for choosing our service!"
+                    )
+                    
+                    # Send confirmation to customer
+                    print(f"Sending to customer {booking.customer_phone} message: {customer_message}")
+                    success, msg = send_sms(booking.customer_phone, customer_message)
+                    if success:
+                        print("Successfully sent confirmation to customer")
+                    else:
+                        print(f"Failed to send confirmation to customer: {msg}")
+                        # Fallback to email or other notification method could be added here
+                except Exception as e:
+                    print(f"Error preparing/sending customer message: {str(e)}")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
 
                 # No need to send a second message to provider
 
