@@ -547,11 +547,7 @@ def sms_webhook():
         print(f"Booking ID: {booking.id if booking else 'None'}")
         print(f"Customer phone: {booking.customer_phone if booking else 'N/A'}")
         
-        # Normalize the message text for comparison
-        normalized_text = message_text.strip().lower()
-        print(f"Normalized message text: '{normalized_text}'")
-        
-        if normalized_text in ['y', 'yes']:
+        if message_text in ['y', 'yes']:
             try:
                 print("Processing 'Y' response from provider")
                 # Update booking status
