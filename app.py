@@ -673,6 +673,46 @@ def test_sms():
         "number": test_number
     })
 
+@app.route('/test-db', methods=['GET'])
+def test_db():
+    """Test endpoint to verify database and model functionality"""
+    try:
+        # Test database connection
+        db.session.execute(text('SELECT 1'))
+        
+        # Test creating a test booking
+        test_booking = Booking(
+            customer_phone='+15551234567',
+            customer_name='Test User',
+            provider_phone='+15559876543',
+            provider_id='test_provider',
+            service_type='Test Service',
+            status='test',
+            appointment_time=datetime.utcnow(),
+            response_deadline=datetime.utcnow() + timedelta(hours=1)
+        )
+        
+        db.session.add(test_booking)
+        db.session.commit()
+        
+        # Clean up
+        db.session.delete(test_booking)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Database and model test passed',
+            'database_url': os.getenv('DATABASE_URL', 'sqlite:///bookings.db')
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'type': type(e).__name__,
+            'database_url': os.getenv('DATABASE_URL', 'sqlite:///bookings.db')
+        }), 500
+
 if __name__ == '__main__':
     # Start background tasks
     scheduler = start_background_tasks()
