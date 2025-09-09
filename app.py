@@ -577,10 +577,9 @@ def sms_webhook():
                         # Format address (using the provided example if not available)
                         address = booking.address or '4400 Hillcrest Drive, Apt. 303, Hollywood, 33021'
                         
-                        # Single confirmation message with all details
+                        # Single confirmation message with all details including client info
                         provider_message = (
-                            "You've confirmed the booking! The customer has been notified.\n\n"
-                            f"Customer: {customer_name} - {booking.customer_phone}\n"
+                            f"You've confirmed the booking with {customer_name} ({booking.customer_phone}). The customer has been notified.\n\n"
                             f"Service: {service_type}\n"
                             f"When: {appointment_time}\n"
                             f"Address: {address}"
