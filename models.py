@@ -9,6 +9,7 @@ class Booking(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     customer_phone = db.Column(db.String(20), nullable=False)
+    customer_name = db.Column(db.String(100), nullable=True)  # Add customer name field
     provider_phone = db.Column(db.String(20), nullable=False, index=True)
     provider_id = db.Column(db.String(50), nullable=True)  # Store the provider ID (e.g., 'prov_amy')
     service_type = db.Column(db.String(100), nullable=True)
