@@ -478,12 +478,21 @@ def sms_webhook():
             return jsonify({"status": "ignored", "message": "No pending booking found for this provider"}), 200
 
         # Process the response
-        if message_text in ['y', 'yes']:
+        print(f"\n=== PROCESSING PROVIDER RESPONSE ===")
+        print(f"Message text: '{message_text}'")
+        print(f"From number: {from_number}")
+        print(f"Provider: {provider}")
+        print(f"Booking ID: {booking.id if booking else 'None'}")
+        
+        if message_text.lower() in ['y', 'yes']:
             try:
+                print("Processing 'Y' response from provider")
                 # Update booking status
                 booking.status = 'confirmed'
                 booking.updated_at = datetime.utcnow()
+                print(f"Updated booking status to 'confirmed' for booking ID: {booking.id}")
                 db.session.commit()
+                print("Successfully committed booking update to database")
 
                 # Prepare customer message
                 provider_name = provider.get('name', 'the provider') if provider else 'the provider'
