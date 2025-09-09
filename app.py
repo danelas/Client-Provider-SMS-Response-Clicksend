@@ -181,7 +181,8 @@ def create_booking():
         # Check database connection
         try:
             with app.app_context():
-                db.session.execute('SELECT 1')
+                from sqlalchemy import text
+                db.session.execute(text('SELECT 1'))
                 print("Database connection successful")
         except Exception as e:
             error_msg = f"Database connection error: {str(e)}"
@@ -628,6 +629,25 @@ def start_background_tasks():
     )
     scheduler.start()
     return scheduler
+
+@app.route('/test-sms', methods=['GET'])
+def test_sms():
+    """Test endpoint to verify SMS functionality"""
+    test_number = request.args.get('to')
+    if not test_number:
+        return jsonify({
+            "status": "error",
+            "message": "Missing 'to' parameter with phone number"
+        }), 400
+        
+    test_message = "Test message from SMS system - please ignore"
+    success, result = send_sms(test_number, test_message)
+    
+    return jsonify({
+        "status": "success" if success else "error",
+        "message": result,
+        "number": test_number
+    })
 
 if __name__ == '__main__':
     # Start background tasks
