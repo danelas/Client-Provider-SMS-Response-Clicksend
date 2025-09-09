@@ -250,6 +250,7 @@ def create_booking():
             booking = Booking(
                 customer_phone=data['customer_phone'],
                 customer_name=customer_name,  # Store the customer name
+                provider_phone=provider['phone'],  # Add provider's phone number
                 provider_id=data['provider_id'],
                 service_type=data['service_type'],
                 address=data.get('address', ''),
