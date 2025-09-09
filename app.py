@@ -246,21 +246,44 @@ def create_booking():
             elif 'names' in data and isinstance(data['names'], dict) and 'First Name' in data['names']:
                 customer_name = data['names']['First Name']
                 
-            # Create a new booking
-            booking = Booking(
-                customer_phone=data['customer_phone'],
-                customer_name=customer_name,  # Store the customer name
-                provider_phone=provider['phone'],  # Add provider's phone number
-                provider_id=data['provider_id'],
-                service_type=data['service_type'],
-                address=data.get('address', ''),
-                appointment_time=appointment_dt,
-                status='pending',
-                response_deadline=response_deadline
-            )
-            
-            db.session.add(booking)
-            db.session.commit()
+            # Create a new booking with detailed error handling
+            try:
+                booking = Booking(
+                    customer_phone=data['customer_phone'],
+                    customer_name=customer_name,  # Store the customer name
+                    provider_phone=provider['phone'],  # Add provider's phone number
+                    provider_id=data['provider_id'],
+                    service_type=data['service_type'],
+                    address=data.get('address', ''),
+                    appointment_time=appointment_dt,
+                    status='pending',
+                    response_deadline=response_deadline
+                )
+                print(f"Booking object created: {booking}")
+                
+                db.session.add(booking)
+                db.session.commit()
+                print("Booking successfully committed to database")
+                
+            except Exception as e:
+                db.session.rollback()
+                error_details = {
+                    'error': str(e),
+                    'type': type(e).__name__,
+                    'data': {
+                        'customer_phone': data['customer_phone'],
+                        'provider_phone': provider['phone'],
+                        'provider_id': data['provider_id'],
+                        'service_type': data['service_type'],
+                        'appointment_time': str(appointment_dt)
+                    }
+                }
+                print(f"ERROR creating booking: {error_details}")
+                return jsonify({
+                    "status": "error",
+                    "message": "Failed to create booking",
+                    "details": str(e)
+                }), 400
             
             # Format the appointment time for the message
             try:
