@@ -366,10 +366,30 @@ def sms_webhook():
         
     # Log all incoming requests for debugging
     print(f"\n=== INCOMING WEBHOOK REQUEST ===")
+    print(f"Time: {datetime.utcnow().isoformat()}")
     print(f"Method: {request.method}")
+    
+    # Load providers data
+    try:
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+            print(f"Loaded {len(providers)} providers")
+    except Exception as e:
+        print(f"ERROR loading providers: {str(e)}")
+        return jsonify({"status": "error", "message": "Failed to load provider data"}), 500
     print(f"Headers: {dict(request.headers)}")
     print(f"Content-Type: {request.content_type}")
     print(f"Raw data: {request.get_data()}")
+    
+    # Log form data if it exists
+    if request.form:
+        print("Form data:", dict(request.form))
+    
+    # Log JSON data if it exists
+    if request.is_json:
+        print("JSON data:", request.get_json())
+    
+    print("-" * 50)
     
     # Ensure proper content type
     if not request.is_json and request.content_type != 'application/x-www-form-urlencoded':
@@ -468,7 +488,19 @@ def sms_webhook():
             return jsonify({"status": "ignored", "message": "No pending booking found for this provider"}), 200
 
         # Process the response
-        if message_text in ['y', 'yes']:
+        print(f"\n=== PROCESSING PROVIDER RESPONSE ===")
+        print(f"Provider: {provider_number}")
+        print(f"Message: {message_text}")
+        print(f"Booking ID: {booking.id if booking else 'N/A'}")
+        
+        # Make response case-insensitive and log the processing
+        normalized_response = message_text.lower().strip()
+        print(f"Normalized response: '{normalized_response}'")
+        print(f"Available provider numbers: {[p.get('phone') for p in providers.values()] if providers else 'No providers'}")
+        print(f"Provider data: {provider}")
+        
+        if normalized_response in ['y', 'yes']:
+            print(f"Processing CONFIRMATION for booking {booking.id}")
             try:
                 # Update booking status
                 booking.status = 'confirmed'
@@ -540,7 +572,10 @@ def sms_webhook():
                     
                 return jsonify({"status": "error", "message": "Failed to confirm booking"}), 500
 
-        elif message_text in ['n', 'no']:
+        elif normalized_response in ['n', 'no']:
+            print(f"Provider {provider_number} REJECTED booking {booking.id}")
+            print(f"Provider data: {provider}")
+            print(f"Booking data: {booking.to_dict() if hasattr(booking, 'to_dict') else 'No booking data'}")
             try:
                 # Update booking status
                 booking.status = 'rejected'
@@ -577,6 +612,7 @@ def sms_webhook():
 
         else:
             # Not a valid response, ask for Y/N
+            print(f"INVALID response from {provider_number}: '{message_text}'. Asking for Y/N")
             response_message = (
                 "We didn't understand your response. "
                 "Please reply with:\n"
