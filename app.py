@@ -537,10 +537,24 @@ def sms_webhook():
         if to_number:
             to_number = clean_phone_number(to_number)
         
-        # Only process messages sent to our dedicated number
-        if to_number and to_number != clean_phone_number(TEXTMAGIC_FROM_NUMBER):
-            print(f"Ignoring message not for our dedicated number. To: {to_number}, Expected: {TEXTMAGIC_FROM_NUMBER}")
-            return jsonify({"status": "ignored", "message": "Not the dedicated number"}), 200
+        # Only process messages sent to our dedicated number (with flexible matching)
+        expected_number = clean_phone_number(TEXTMAGIC_FROM_NUMBER)
+        if to_number and expected_number:
+            # More flexible number matching - handle different formats
+            to_normalized = to_number.replace('+', '').replace('-', '').replace(' ', '')
+            expected_normalized = expected_number.replace('+', '').replace('-', '').replace(' ', '')
+            
+            if to_normalized != expected_normalized:
+                print(f"Ignoring message not for our dedicated number.")
+                print(f"  Received to_number: '{to_number}' (normalized: '{to_normalized}')")
+                print(f"  Expected number: '{expected_number}' (normalized: '{expected_normalized}')")
+                return jsonify({"status": "ignored", "message": "Not the dedicated number"}), 200
+            else:
+                print(f"✓ Message is for our dedicated number: {to_number}")
+        else:
+            print(f"⚠️ Warning: Missing to_number or TEXTMAGIC_FROM_NUMBER. Processing anyway.")
+            print(f"  to_number: '{to_number}'")
+            print(f"  TEXTMAGIC_FROM_NUMBER: '{TEXTMAGIC_FROM_NUMBER}'")
                 
         # Get the provider's number (should be the sender)
         provider_number = from_number
@@ -548,45 +562,58 @@ def sms_webhook():
         
         print(f"Looking up provider with number: {provider_number}")
         
-        # Get the provider details
+        # Get the provider details with more flexible phone matching
         provider = None
         with open(PROVIDERS_FILE, 'r') as f:
             providers = json.load(f)
             for pid, pdata in providers.items():
                 # Clean the stored phone number for comparison
                 stored_phone = clean_phone_number(pdata.get('phone', ''))
-                if stored_phone == provider_number:
+                
+                # Flexible phone number matching
+                provider_normalized = provider_number.replace('+', '').replace('-', '').replace(' ', '')
+                stored_normalized = stored_phone.replace('+', '').replace('-', '').replace(' ', '')
+                
+                if provider_normalized == stored_normalized:
                     provider = {"id": pid, **pdata}
-                    print(f"Found provider: {provider}")
+                    print(f"✓ Found provider: {provider}")
                     break
-        
+                    
         if not provider:
-            print(f"No provider found with number: {provider_number}")
-            # Try to find by any booking with this provider number
-            booking = Booking.query.filter(
-                db.func.replace(Booking.provider_phone, '+', '') == provider_number.replace('+', ''),
-                Booking.status == 'pending'
-            ).order_by(Booking.created_at.desc()).first()
-
-            # If a booking is found, get the provider details from the booking's provider_id
-            if booking and booking.provider_id:
-                provider_details = get_provider(booking.provider_id)
-                if provider_details:
-                    provider = {"id": booking.provider_id, **provider_details}
-                    print(f"Found provider via booking: {provider}")
-        else:
-            # Find the most recent pending booking for this provider ID
+            print(f"⚠️ No provider found with exact phone match for: {provider_number}")
+            print(f"Available provider phones: {[clean_phone_number(p.get('phone', '')) for p in providers.values()]}")
+        
+        # Find the most recent pending booking
+        booking = None
+        if provider:
+            # First try to find by provider ID
             booking = Booking.query.filter_by(
                 provider_id=provider['id'],
                 status='pending'
             ).order_by(Booking.created_at.desc()).first()
+            print(f"Booking search by provider ID '{provider['id']}': {'Found' if booking else 'Not found'}")
             
-            if not booking and provider['id'] != TEST_PROVIDER_ID:
-                # Fallback to phone number search if no booking found by ID
-                booking = Booking.query.filter_by(
-                    provider_phone=provider_number,
-                    status='pending'
-                ).order_by(Booking.created_at.desc()).first()
+        if not booking:
+            # Try to find by phone number with flexible matching
+            print(f"Searching for booking by phone number: {provider_number}")
+            all_pending = Booking.query.filter_by(status='pending').all()
+            
+            for b in all_pending:
+                if hasattr(b, 'provider_phone') and b.provider_phone:
+                    booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
+                    provider_phone_normalized = provider_number.replace('+', '').replace('-', '').replace(' ', '')
+                    
+                    if booking_phone_normalized == provider_phone_normalized:
+                        booking = b
+                        print(f"✓ Found booking by phone match: {booking.id}")
+                        
+                        # If we don't have provider details yet, try to get them from booking
+                        if not provider and booking.provider_id:
+                            provider_details = get_provider(booking.provider_id)
+                            if provider_details:
+                                provider = {"id": booking.provider_id, **provider_details}
+                                print(f"✓ Found provider via booking: {provider}")
+                        break
 
         if not booking:
             print(f"No pending booking found for provider: {provider_number}")
