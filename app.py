@@ -455,41 +455,41 @@ def sms_webhook():
         return jsonify({"status": "error", "message": error_msg}), 400
     
     try:
-        # Process the incoming message with detailed logging
+            # Process the incoming message with TextMagic-specific handling
         print("\n=== PROCESSING INCOMING MESSAGE ===")
         print(f"Raw data: {data}")
         
-        # Try different ways to extract message data
-        message_data = data.get('message', {}) or data
-        print(f"Message data: {message_data}")
+        # TextMagic webhook format typically has message data at the root level
+        message_data = data
         
-        # Log all available fields for debugging
-        print("\nAvailable data fields:")
-        for key, value in data.items():
-            print(f"  {key}: {value}")
-            
-        # Extract the SMS content
-        text = message_data.get('text', message_data.get('body', '')).strip().lower()
-        print(f"Extracted message text: '{text}'")
+        # Extract message text - try multiple possible fields
+        text = (
+            message_data.get('text') or 
+            message_data.get('body') or 
+            message_data.get('message', '')
+        ).strip().lower()
         
-        # Get the sender's phone number (trying multiple possible fields)
-        from_number = data.get('customer_phone', '')
-        if not from_number:
-            from_number = message_data.get('from', message_data.get('sender', ''))
-        print(f"Raw from_number: {from_number}")
+        # Get sender's phone number - TextMagic uses 'from' or 'sender' field
+        from_number = (
+            message_data.get('from') or 
+            message_data.get('sender') or 
+            message_data.get('customer_phone', '')
+        )
         
         # Clean the phone number
         from_number = clean_phone_number(from_number)
-        print(f"Cleaned from_number: {from_number}")
         
-        # Log the webhook format for debugging
-        print("\nWebhook format appears to be:")
-        if 'customer_phone' in data:
-            print("- Using direct form fields (customer_phone)")
-        elif 'from' in message_data:
-            print("- Using nested message fields (message.from)")
-        else:
-            print("- Unknown webhook format")
+        # Get recipient number (should be our dedicated number)
+        to_number = clean_phone_number(
+            message_data.get('receiver') or 
+            message_data.get('to') or 
+            message_data.get('recipient', '')
+        )
+        
+        # Log all extracted data
+        print(f"From: {from_number}")
+        print(f"To: {to_number}")
+        print(f"Message: '{text}'")
         
         if not text or not from_number:
             error_msg = f"Missing required fields in webhook data. Text: '{text}', From: '{from_number}'"
