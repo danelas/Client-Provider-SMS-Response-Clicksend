@@ -82,9 +82,22 @@ def send_sms(to_number, message, from_number=None):
         print(f"Original to_number: {to_number}")
         print(f"Original from_number: {from_number}")
         
+        # Validate API credentials
+        if not TEXTMAGIC_USERNAME or not TEXTMAGIC_API_KEY:
+            error_msg = "TextMagic API credentials not configured"
+            print(f"CREDENTIAL ERROR: {error_msg}")
+            print(f"TEXTMAGIC_USERNAME: {'Set' if TEXTMAGIC_USERNAME else 'Not set'}")
+            print(f"TEXTMAGIC_API_KEY: {'Set' if TEXTMAGIC_API_KEY else 'Not set'}")
+            return False, error_msg
+        
         # Clean and format numbers
         to_number = clean_phone_number(to_number)
         print(f"Cleaned to_number: {to_number}")
+        
+        if not to_number:
+            error_msg = "Invalid or empty phone number"
+            print(f"PHONE ERROR: {error_msg}")
+            return False, error_msg
         
         # Handle sender ID (from_number)
         sender_id = clean_phone_number(from_number or TEXTMAGIC_FROM_NUMBER)
@@ -100,9 +113,14 @@ def send_sms(to_number, message, from_number=None):
             'X-TM-Key': TEXTMAGIC_API_KEY
         }
         
+        # For TextMagic, the 'phones' parameter should not include the +
+        phones_number = to_number
+        if phones_number and phones_number.startswith('+'):
+            phones_number = phones_number[1:]
+        
         payload = {
             'text': message,
-            'phones': to_number,
+            'phones': phones_number,
         }
         
         if sender_id:
@@ -119,14 +137,32 @@ def send_sms(to_number, message, from_number=None):
             timeout=10  # Add timeout to prevent hanging
         )
         
-        print(f"API Response: {response.status_code}")
+        print(f"API Response Status: {response.status_code}")
+        print(f"API Response Headers: {dict(response.headers)}")
+        print(f"API Response Body: {response.text}")
         
         if response.status_code == 201:
-            print("SMS sent successfully")
-            return True, f"SMS sent with ID: {response.json().get('id')}"
+            try:
+                response_data = response.json()
+                print(f"SMS sent successfully - Response data: {response_data}")
+                return True, f"SMS sent with ID: {response_data.get('id', 'unknown')}"
+            except Exception as json_err:
+                print(f"Warning: Could not parse JSON response: {json_err}")
+                return True, "SMS sent successfully (could not parse response ID)"
         else:
             error_msg = f"TextMagic API error ({response.status_code}): {response.text}"
-            print(error_msg)
+            print(f"API ERROR: {error_msg}")
+            
+            # Try to parse error details if available
+            try:
+                error_data = response.json()
+                if 'message' in error_data:
+                    error_msg += f" - Details: {error_data['message']}"
+                if 'errors' in error_data:
+                    error_msg += f" - Errors: {error_data['errors']}"
+            except:
+                pass
+                
             return False, error_msg
             
     except requests.exceptions.RequestException as e:
@@ -410,6 +446,10 @@ def sms_webhook():
     print(f"Raw data: {request.get_data()}")
     print("-" * 60)
     
+    # Force flush to ensure logs appear immediately
+    import sys
+    sys.stdout.flush()
+    
     # Load providers data
     try:
         with open(PROVIDERS_FILE, 'r') as f:
@@ -607,9 +647,20 @@ def sms_webhook():
                         f"When: {appointment_time}\n"
                         f"Address: {address}"
                     )
+                    print(f"=== SENDING CONFIRMATION TO PROVIDER ===")
+                    print(f"Provider phone: {provider['phone']}")
+                    print(f"Provider message: {provider_message}")
+                    print(f"Message length: {len(provider_message)} characters")
+                    
                     success, msg = send_sms(provider['phone'], provider_message)
-                    if not success:
-                        print(f"Failed to send confirmation to provider: {msg}")
+                    if success:
+                        print(f"✓ Successfully sent confirmation to provider: {msg}")
+                    else:
+                        print(f"✗ FAILED to send confirmation to provider: {msg}")
+                        # Log the failure for debugging
+                        error_log = f"Provider SMS failure - Phone: {provider['phone']}, Error: {msg}, Booking ID: {booking.id}"
+                        print(f"ERROR LOG: {error_log}")
+                    print("==========================================")
                     # Don't send any other messages to provider
 
                 customer_message = (
@@ -621,10 +672,20 @@ def sms_webhook():
                 )
                 
                 # Send confirmation to customer
+                print(f"=== SENDING CONFIRMATION TO CUSTOMER ===")
+                print(f"Customer phone: {booking.customer_phone}")
+                print(f"Customer message: {customer_message}")
+                print(f"Message length: {len(customer_message)} characters")
+                
                 success, msg = send_sms(booking.customer_phone, customer_message)
-                if not success:
-                    print(f"Failed to send confirmation to customer: {msg}")
-                    # Fallback to email or other notification method could be added here
+                if success:
+                    print(f"✓ Successfully sent confirmation to customer: {msg}")
+                else:
+                    print(f"✗ FAILED to send confirmation to customer: {msg}")
+                    # Log the failure for debugging
+                    error_log = f"Customer SMS failure - Phone: {booking.customer_phone}, Error: {msg}, Booking ID: {booking.id}"
+                    print(f"ERROR LOG: {error_log}")
+                print("==========================================")
 
                 # No need to send a second message to provider
 
@@ -712,6 +773,70 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 
+@app.route('/debug-webhook', methods=['POST'])
+def debug_webhook():
+    """Debug endpoint to test webhook processing without TextMagic"""
+    try:
+        # Get the most recent pending booking
+        booking = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).first()
+        
+        if not booking:
+            return jsonify({
+                "status": "error", 
+                "message": "No pending bookings found",
+                "debug_info": {
+                    "total_bookings": Booking.query.count(),
+                    "pending_bookings": Booking.query.filter_by(status='pending').count()
+                }
+            }), 404
+        
+        # Simulate provider confirmation
+        booking.status = 'confirmed'
+        booking.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        # Get provider info
+        provider = get_provider(booking.provider_id)
+        provider_name = provider.get('name', 'the provider') if provider else 'the provider'
+        
+        # Format messages (but don't send them)
+        provider_message = (
+            "You've confirmed the booking! The customer has been notified.\n\n"
+            f"Customer: {getattr(booking, 'customer_name', '')} - {booking.customer_phone}\n"
+            f"Service: {booking.service_type}\n"
+            f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+            f"Address: {booking.address or 'Not specified'}"
+        )
+        
+        customer_message = (
+            f"Your booking with {provider_name} has been confirmed!\n\n"
+            f"Service: {booking.service_type or 'Not specified'}\n"
+            f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+            f"Address: {booking.address or 'Not specified'}\n\n"
+            "Thank you for choosing our service!"
+        )
+        
+        return jsonify({
+            "status": "success",
+            "message": "Booking confirmed (debug mode - no SMS sent)",
+            "booking_id": booking.id,
+            "provider_message": provider_message,
+            "customer_message": customer_message,
+            "debug_info": {
+                "booking_status": booking.status,
+                "provider_phone": provider.get('phone') if provider else 'Unknown',
+                "customer_phone": booking.customer_phone,
+                "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
+
 def check_expired_bookings():
     """Background task to check for and handle expired bookings"""
     with app.app_context():
@@ -784,6 +909,46 @@ def test_sms():
         "number": test_number
     })
 
+@app.route('/test-webhook', methods=['POST'])
+def test_webhook():
+    """Test endpoint to simulate a webhook response"""
+    try:
+        # Get test parameters
+        provider_phone = request.json.get('provider_phone', '+15551234567')
+        response_text = request.json.get('response', 'Y')
+        
+        # Create test webhook data in TextMagic format
+        test_webhook_data = {
+            'from': provider_phone,
+            'text': response_text,
+            'receiver': TEXTMAGIC_FROM_NUMBER,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        print(f"=== SIMULATING WEBHOOK RESPONSE ===")
+        print(f"Test data: {test_webhook_data}")
+        
+        # Simulate the webhook request
+        with app.test_request_context('/webhook/sms', 
+                                    method='POST', 
+                                    json=test_webhook_data,
+                                    headers={'Content-Type': 'application/json'}):
+            response = sms_webhook()
+            
+        return jsonify({
+            'status': 'success',
+            'message': 'Test webhook processed',
+            'test_data': test_webhook_data,
+            'webhook_response': response.get_json() if hasattr(response, 'get_json') else str(response)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'type': type(e).__name__
+        }), 500
+
 @app.route('/test-db', methods=['GET'])
 def test_db():
     """Test endpoint to verify database and model functionality"""
@@ -824,3 +989,26 @@ def test_db():
             'database_url': os.getenv('DATABASE_URL', 'sqlite:///bookings.db')
         }), 500
 
+@app.route('/routes', methods=['GET'])
+def list_routes():
+    """List all available routes for debugging"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': list(rule.methods),
+            'rule': str(rule)
+        })
+    return jsonify({'routes': routes})
+
+if __name__ == '__main__':
+    # Start background tasks if running directly
+    try:
+        scheduler = start_background_tasks()
+        print("Background tasks started successfully")
+    except Exception as e:
+        print(f"Warning: Could not start background tasks: {e}")
+    
+    # Run the app
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
