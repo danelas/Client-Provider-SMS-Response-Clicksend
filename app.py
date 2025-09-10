@@ -700,6 +700,234 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 
+@app.route('/providers', methods=['GET'])
+def list_providers():
+    """List all providers"""
+    try:
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+        return jsonify(providers), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/providers/add', methods=['POST', 'GET'])
+def add_provider():
+    """Add a new provider"""
+    if request.method == 'GET':
+        # Show form
+        return """
+        <html>
+        <head><title>Add Provider</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>Add New Provider</h2>
+            <form method="POST">
+                <p>
+                    <label>Provider ID:</label><br>
+                    <input type="text" name="provider_id" placeholder="provider24" required style="padding: 8px; width: 200px;">
+                </p>
+                <p>
+                    <label>Name:</label><br>
+                    <input type="text" name="name" placeholder="John Doe" required style="padding: 8px; width: 200px;">
+                </p>
+                <p>
+                    <label>Phone:</label><br>
+                    <input type="text" name="phone" placeholder="+1234567890" required style="padding: 8px; width: 200px;">
+                </p>
+                <p>
+                    <button type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer;">Add Provider</button>
+                    <a href="/providers/manage" style="margin-left: 10px;">Back to Manage</a>
+                </p>
+            </form>
+        </body>
+        </html>
+        """
+    
+    try:
+        # Get form data
+        provider_id = request.form.get('provider_id')
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        
+        if not all([provider_id, name, phone]):
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Load current providers
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+        
+        # Add new provider
+        providers[provider_id] = {"name": name, "phone": phone}
+        
+        # Save back to file
+        with open(PROVIDERS_FILE, 'w') as f:
+            json.dump(providers, f, indent=2)
+        
+        return f"""
+        <html>
+        <head><title>Provider Added</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>✅ Provider Added Successfully!</h2>
+            <p><strong>ID:</strong> {provider_id}</p>
+            <p><strong>Name:</strong> {name}</p>
+            <p><strong>Phone:</strong> {phone}</p>
+            <p><a href="/providers/manage">Back to Manage Providers</a></p>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/providers/manage', methods=['GET'])
+def manage_providers():
+    """Provider management interface"""
+    try:
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+        
+        provider_rows = ""
+        for pid, pdata in providers.items():
+            provider_rows += f"""
+            <tr>
+                <td>{pid}</td>
+                <td>{pdata.get('name', '')}</td>
+                <td>{pdata.get('phone', '')}</td>
+                <td>
+                    <a href="/providers/edit/{pid}" style="color: #007cba;">Edit</a> | 
+                    <a href="/providers/delete/{pid}" style="color: #d63384;" onclick="return confirm('Delete {pdata.get('name', pid)}?')">Delete</a>
+                </td>
+            </tr>
+            """
+        
+        return f"""
+        <html>
+        <head><title>Manage Providers</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>Manage Providers</h2>
+            <p><a href="/providers/add" style="background: #28a745; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">+ Add New Provider</a></p>
+            
+            <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 20px;">
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 10px; text-align: left;">Provider ID</th>
+                    <th style="padding: 10px; text-align: left;">Name</th>
+                    <th style="padding: 10px; text-align: left;">Phone</th>
+                    <th style="padding: 10px; text-align: left;">Actions</th>
+                </tr>
+                {provider_rows}
+            </table>
+            
+            <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 5px;">
+                <h3>Quick Git Commands (after making changes):</h3>
+                <code>
+                git add providers.json<br>
+                git commit -m "Update providers"<br>
+                git push origin master
+                </code>
+            </div>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/providers/edit/<provider_id>', methods=['GET', 'POST'])
+def edit_provider(provider_id):
+    """Edit an existing provider"""
+    try:
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+        
+        if provider_id not in providers:
+            return jsonify({"error": "Provider not found"}), 404
+        
+        if request.method == 'GET':
+            # Show edit form
+            provider = providers[provider_id]
+            return f"""
+            <html>
+            <head><title>Edit Provider</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>Edit Provider: {provider_id}</h2>
+                <form method="POST">
+                    <p>
+                        <label>Name:</label><br>
+                        <input type="text" name="name" value="{provider.get('name', '')}" required style="padding: 8px; width: 200px;">
+                    </p>
+                    <p>
+                        <label>Phone:</label><br>
+                        <input type="text" name="phone" value="{provider.get('phone', '')}" required style="padding: 8px; width: 200px;">
+                    </p>
+                    <p>
+                        <button type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer;">Update Provider</button>
+                        <a href="/providers/manage" style="margin-left: 10px;">Cancel</a>
+                    </p>
+                </form>
+            </body>
+            </html>
+            """
+        
+        # Handle POST - update provider
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        
+        if not all([name, phone]):
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Update provider
+        providers[provider_id] = {"name": name, "phone": phone}
+        
+        # Save back to file
+        with open(PROVIDERS_FILE, 'w') as f:
+            json.dump(providers, f, indent=2)
+        
+        return f"""
+        <html>
+        <head><title>Provider Updated</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>✅ Provider Updated Successfully!</h2>
+            <p><strong>ID:</strong> {provider_id}</p>
+            <p><strong>Name:</strong> {name}</p>
+            <p><strong>Phone:</strong> {phone}</p>
+            <p><a href="/providers/manage">Back to Manage Providers</a></p>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/providers/delete/<provider_id>', methods=['GET'])
+def delete_provider(provider_id):
+    """Delete a provider"""
+    try:
+        with open(PROVIDERS_FILE, 'r') as f:
+            providers = json.load(f)
+        
+        if provider_id not in providers:
+            return jsonify({"error": "Provider not found"}), 404
+        
+        # Remove provider
+        deleted_provider = providers.pop(provider_id)
+        
+        # Save back to file
+        with open(PROVIDERS_FILE, 'w') as f:
+            json.dump(providers, f, indent=2)
+        
+        return f"""
+        <html>
+        <head><title>Provider Deleted</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>🗑️ Provider Deleted</h2>
+            <p><strong>Deleted:</strong> {deleted_provider.get('name', provider_id)} ({deleted_provider.get('phone', '')})</p>
+            <p><a href="/providers/manage">Back to Manage Providers</a></p>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/debug-webhook', methods=['POST'])
 def debug_webhook():
     """Debug endpoint to test webhook processing without TextMagic"""
