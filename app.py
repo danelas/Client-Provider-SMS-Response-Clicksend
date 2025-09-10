@@ -1001,6 +1001,55 @@ def list_routes():
         })
     return jsonify({'routes': routes})
 
+@app.route('/webhook-status', methods=['GET'])
+def webhook_status():
+    """Check webhook configuration and recent activity"""
+    try:
+        # Check recent bookings
+        recent_bookings = Booking.query.order_by(Booking.created_at.desc()).limit(5).all()
+        
+        # Check TextMagic configuration
+        textmagic_config = {
+            'username_set': bool(TEXTMAGIC_USERNAME),
+            'api_key_set': bool(TEXTMAGIC_API_KEY),
+            'from_number': TEXTMAGIC_FROM_NUMBER,
+            'webhook_url': 'https://client-provider-sms-response-clicksend-1.onrender.com/webhook/sms'
+        }
+        
+        # Format booking data
+        bookings_data = []
+        for booking in recent_bookings:
+            bookings_data.append({
+                'id': booking.id,
+                'status': booking.status,
+                'customer_phone': booking.customer_phone,
+                'provider_phone': getattr(booking, 'provider_phone', 'N/A'),
+                'provider_id': booking.provider_id,
+                'created_at': booking.created_at.isoformat() if booking.created_at else None,
+                'updated_at': booking.updated_at.isoformat() if booking.updated_at else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'webhook_url': 'https://client-provider-sms-response-clicksend-1.onrender.com/webhook/sms',
+            'textmagic_config': textmagic_config,
+            'recent_bookings': bookings_data,
+            'pending_bookings_count': Booking.query.filter_by(status='pending').count(),
+            'total_bookings_count': Booking.query.count(),
+            'instructions': {
+                'test_webhook': 'Send SMS "Y" to your TextMagic number and check logs',
+                'check_textmagic': 'Verify webhook URL is set in TextMagic dashboard',
+                'debug_booking': 'Use POST /debug-webhook to test confirmation flow'
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'type': type(e).__name__
+        }), 500
+
 if __name__ == '__main__':
     # Start background tasks if running directly
     try:
