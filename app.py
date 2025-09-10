@@ -63,17 +63,34 @@ def get_provider(provider_id):
         print(f"Error loading providers: {str(e)}")
         return None
 
+def clean_phone_number(phone):
+    """Helper function to clean and standardize phone numbers"""
+    if not phone:
+        return ""
+    # Remove all non-digit characters except +
+    cleaned = ''.join(c for c in str(phone) if c == '+' or c.isdigit())
+    # Ensure it starts with + and has country code
+    if cleaned and not cleaned.startswith('+'):
+        # Assume US/Canada number if no country code
+        cleaned = f"+1{cleaned}" if len(cleaned) == 10 else f"+{cleaned}"
+    return cleaned
+
 def send_sms(to_number, message, from_number=None):
     """Send SMS using TextMagic API"""
     try:
-        # Format number (remove any non-digit characters except +)
-        to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
+        print(f"\n=== SEND_SMS STARTED ===")
+        print(f"Original to_number: {to_number}")
+        print(f"Original from_number: {from_number}")
         
-        # Use provided from_number or fall back to environment variable
-        sender_id = from_number or TEXTMAGIC_FROM_NUMBER
+        # Clean and format numbers
+        to_number = clean_phone_number(to_number)
+        print(f"Cleaned to_number: {to_number}")
         
-        # For TextMagic, if using a dedicated number, it should be in the international format
-        # without the + sign for the 'from' parameter
+        # Handle sender ID (from_number)
+        sender_id = clean_phone_number(from_number or TEXTMAGIC_FROM_NUMBER)
+        print(f"Using sender_id: {sender_id}")
+        
+        # For TextMagic, the 'from' parameter should not include the +
         if sender_id and sender_id.startswith('+'):
             sender_id = sender_id[1:]
         
@@ -88,22 +105,40 @@ def send_sms(to_number, message, from_number=None):
             'phones': to_number,
         }
         
-        # Only add 'from' if we have a sender_id
         if sender_id:
             payload['from'] = sender_id
+        
+        print(f"Sending to: {to_number}")
+        print(f"From: {sender_id}")
+        print(f"Message length: {len(message)} characters")
         
         response = requests.post(
             TEXTMAGIC_API_URL,
             json=payload,
-            headers=headers
+            headers=headers,
+            timeout=10  # Add timeout to prevent hanging
         )
         
+        print(f"API Response: {response.status_code}")
+        
         if response.status_code == 201:
+            print("SMS sent successfully")
             return True, f"SMS sent with ID: {response.json().get('id')}"
         else:
-            return False, f"TextMagic API error: {response.text}"
+            error_msg = f"TextMagic API error ({response.status_code}): {response.text}"
+            print(error_msg)
+            return False, error_msg
+            
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Request error sending SMS: {str(e)}"
+        print(error_msg)
+        return False, error_msg
     except Exception as e:
-        return False, f"Error sending SMS: {str(e)}"
+        error_msg = f"Unexpected error sending SMS: {str(e)}"
+        print(error_msg)
+        return False, error_msg
+    finally:
+        print("=== SEND_SMS COMPLETED ===\n")
 
 @app.route('/api/booking', methods=['POST'])
 def create_booking():
