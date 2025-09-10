@@ -287,12 +287,25 @@ def create_booking():
         
         # Look up provider details with detailed logging
         print(f"\n=== LOOKING UP PROVIDER ===")
-        print(f"Provider ID: {data['provider_id']}")
+        print(f"Provider ID from form: '{data['provider_id']}'")
+        print(f"Provider ID type: {type(data['provider_id'])}")
+        
+        # Check if providers.json file exists and is readable
+        try:
+            with open(PROVIDERS_FILE, 'r') as f:
+                all_providers = json.load(f)
+            print(f"Successfully loaded {len(all_providers)} providers from file")
+            print(f"Available provider IDs: {list(all_providers.keys())}")
+        except Exception as e:
+            print(f"ERROR reading providers.json: {str(e)}")
+            return jsonify({"status": "error", "message": f"Cannot read providers file: {str(e)}"}), 500
+        
         provider = get_provider(data['provider_id'])
         
         if not provider:
             error_msg = f"Provider with ID '{data['provider_id']}' not found"
-            print(f"PROVIDER ERROR: {error_msg}")
+            print(f"ERROR: {error_msg}")
+            print(f"Form data received: {data}")
             return jsonify({"status": "error", "message": error_msg}), 404
             
         print(f"Found provider: {provider}")
