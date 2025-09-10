@@ -422,29 +422,23 @@ def sms_webhook():
     print(f"Content-Type: {request.content_type}")
     print(f"Raw data: {request.get_data()}")
     
-    # Log form data if it exists
-    if request.form:
-        print("Form data:", dict(request.form))
-    
-    # Log JSON data if it exists
-    if request.is_json:
-        print("JSON data:", request.get_json())
-    
-    print("-" * 50)
-    
-    # Ensure proper content type
-    if not request.is_json and request.content_type != 'application/x-www-form-urlencoded':
-        error_msg = "Unsupported Media Type: Content-Type must be application/json or application/x-www-form-urlencoded"
+    # Parse the request data based on Content-Type
+    content_type = request.headers.get('Content-Type', '').lower()
+    data = {}
+    if 'application/json' in content_type:
+        data = request.get_json(silent=True) or {}
+    elif 'application/x-www-form-urlencoded' in content_type:
+        data = request.form.to_dict()
+    else:
+        # If content type is not specified or unrecognized, try to get data anyway
+        data = request.form.to_dict() or request.get_json(silent=True) or {}
+
+    # If no data could be parsed, return an error
+    if not data:
+        raw_data = request.get_data(as_text=True)
+        error_msg = f"Could not parse webhook data. Content-Type: {content_type}. Raw data: {raw_data[:500]}"
         print(f"ERROR: {error_msg}")
         return jsonify({"status": "error", "message": error_msg}), 400
-        
-    # Parse the request data
-    data = {}
-    if request.is_json:
-        data = request.get_json() or {}
-    else:
-        # Handle form data
-        data = request.form.to_dict()
         
     print(f"Parsed webhook data: {data}")
     
