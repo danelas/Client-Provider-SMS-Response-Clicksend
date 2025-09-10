@@ -379,13 +379,16 @@ def create_booking():
             deadline_et = response_deadline.astimezone(et)
             deadline_str = deadline_et.strftime('%-I:%M %p ET')
             
-            # Send SMS to provider with the requested format and deadline (without customer phone number)
+            # Send SMS to provider with clickable links instead of text responses
+            confirm_url = f"https://client-provider-sms-response-clicksend-1.onrender.com/confirm/{booking.id}"
+            decline_url = f"https://client-provider-sms-response-clicksend-1.onrender.com/decline/{booking.id}"
+            
             message = (
                 f"Hey {provider['name']}, new request: {data['service_type']} "
                 f"at {data['address']} on {formatted_time}. "
-                f"\n\nPlease reply with:\n"
-                f"Y to ACCEPT or N to DECLINE\n"
-                f"\nYou have until {deadline_str} to respond."
+                f"\n\nClick to respond (until {deadline_str}):"
+                f"\n✅ ACCEPT: {confirm_url}"
+                f"\n❌ DECLINE: {decline_url}"
             )
             
             # Log the SMS attempt
@@ -427,13 +430,125 @@ def create_booking():
         print(f"Error in create_booking: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
+@app.route('/confirm/<int:booking_id>', methods=['GET'])
+def confirm_booking_manual(booking_id):
+    """Manual confirmation endpoint - provider clicks link to confirm"""
+    try:
+        booking = Booking.query.get(booking_id)
+        if not booking:
+            return jsonify({"status": "error", "message": "Booking not found"}), 404
+            
+        if booking.status != 'pending':
+            return jsonify({"status": "error", "message": f"Booking already {booking.status}"}), 400
+        
+        # Update booking status
+        booking.status = 'confirmed'
+        booking.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        # Get provider info
+        provider = get_provider(booking.provider_id)
+        provider_name = provider.get('name', 'the provider') if provider else 'the provider'
+        
+        # Send confirmation SMS to provider with customer details
+        customer_name = getattr(booking, 'customer_name', '')
+        appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+        
+        provider_message = (
+            "✅ BOOKING CONFIRMED!\n\n"
+            f"Customer: {customer_name} - {booking.customer_phone}\n"
+            f"Service: {booking.service_type}\n"
+            f"When: {appointment_time}\n"
+            f"Address: {booking.address or 'Not specified'}\n\n"
+            "Please contact the customer to arrange details."
+        )
+        
+        success, msg = send_sms(provider['phone'], provider_message)
+        if not success:
+            print(f"Failed to send confirmation to provider: {msg}")
+        
+        # Send confirmation to customer
+        customer_message = (
+            f"Your booking with {provider_name} has been confirmed!\n\n"
+            f"Service: {booking.service_type or 'Not specified'}\n"
+            f"When: {appointment_time}\n"
+            f"Address: {booking.address or 'Not specified'}\n\n"
+            "The provider will contact you shortly."
+        )
+        
+        success, msg = send_sms(booking.customer_phone, customer_message)
+        if not success:
+            print(f"Failed to send confirmation to customer: {msg}")
+        
+        return f"""
+        <html>
+        <head><title>Booking Confirmed</title></head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>✅ Booking Confirmed!</h2>
+            <p>Customer details have been sent to your phone.</p>
+            <p>Customer: {customer_name} - {booking.customer_phone}</p>
+            <p>Service: {booking.service_type}</p>
+            <p>When: {appointment_time}</p>
+            <p>Address: {booking.address or 'Not specified'}</p>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        print(f"Error in manual confirmation: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/decline/<int:booking_id>', methods=['GET'])
+def decline_booking_manual(booking_id):
+    """Manual decline endpoint - provider clicks link to decline"""
+    try:
+        booking = Booking.query.get(booking_id)
+        if not booking:
+            return jsonify({"status": "error", "message": "Booking not found"}), 404
+            
+        if booking.status != 'pending':
+            return jsonify({"status": "error", "message": f"Booking already {booking.status}"}), 400
+        
+        # Update booking status
+        booking.status = 'rejected'
+        booking.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        # Send rejection message to customer
+        alt_message = (
+            "We're sorry, but the provider you selected is not available. "
+            "You can book with another provider here: goldtouchmobile.com/providers\n\n"
+            "We apologize for any inconvenience."
+        )
+        success, msg = send_sms(booking.customer_phone, alt_message)
+        if not success:
+            print(f"Failed to send rejection to customer: {msg}")
+        
+        return f"""
+        <html>
+        <head><title>Booking Declined</title></head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>❌ Booking Declined</h2>
+            <p>The customer has been notified that you're not available.</p>
+            <p>Thank you for your prompt response.</p>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        print(f"Error in manual decline: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/webhook/sms', methods=['GET', 'POST', 'PUT'])
 def sms_webhook():
-    """Handle incoming SMS webhooks from TextMagic"""
+    """Handle incoming SMS webhooks from TextMagic - simplified version"""
     # Handle webhook validation (GET request)
     if request.method == 'GET':
         print("Webhook validation request received")
         return jsonify({"status": "ok"}), 200
+    
+    # ALWAYS return 200 OK immediately to prevent TextMagic from deleting webhook
+    return jsonify({"status": "received"}), 200
         
     # Log all incoming requests for debugging
     print(f"\n{'='*20} INCOMING WEBHOOK REQUEST {'='*20}")
