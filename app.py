@@ -449,50 +449,62 @@ def sms_webhook():
         return jsonify({"status": "error", "message": error_msg}), 400
     
     try:
-        # Process the incoming message
+        # Process the incoming message with proper field mappings
         message_data = data.get('message', {}) or data
         print(f"Processing message: {message_data}")
         
-        # Extract the SMS content and sender
-        text = message_data.get('text', '').strip().lower()
-        from_number = message_data.get('from', '')
+        # Extract the SMS content and sender using the correct field names
+        text = message_data.get('text', message_data.get('body', '')).strip().lower()
+        
+        # Get the sender's phone number from the correct field
+        from_number = data.get('customer_phone', '')
+        if not from_number:
+            from_number = message_data.get('from', '')
+            
+        # Clean the phone number
+        from_number = clean_phone_number(from_number)
         
         if not text or not from_number:
-            error_msg = "Missing required fields in webhook data"
+            error_msg = f"Missing required fields in webhook data. Text: '{text}', From: '{from_number}'"
             print(f"ERROR: {error_msg}")
             return jsonify({"status": "error", "message": error_msg}), 400
             
         print(f"Processing message from {from_number}: {text}")
         
-        # If we got here, we have valid message data
-        
+        # Get the recipient number (our dedicated number)
         to_number = message_data.get('receiver', '') or message_data.get('to', '')
         if to_number:
-            to_number = ''.join(c for c in to_number if c == '+' or c.isdigit())
+            to_number = clean_phone_number(to_number)
         
         # Only process messages sent to our dedicated number
-        if to_number and to_number != TEXTMAGIC_FROM_NUMBER.replace('+', ''):
+        if to_number and to_number != clean_phone_number(TEXTMAGIC_FROM_NUMBER):
             print(f"Ignoring message not for our dedicated number. To: {to_number}, Expected: {TEXTMAGIC_FROM_NUMBER}")
             return jsonify({"status": "ignored", "message": "Not the dedicated number"}), 200
                 
-        provider_number = message_data.get('sender', message_data.get('from', ''))
-        message_text = message_data.get('text', message_data.get('body', '')).strip().lower()
+        # Get the provider's number (should be the sender)
+        provider_number = from_number
+        message_text = text
+        
+        print(f"Looking up provider with number: {provider_number}")
         
         # Get the provider details
         provider = None
         with open(PROVIDERS_FILE, 'r') as f:
             providers = json.load(f)
             for pid, pdata in providers.items():
-                if pdata.get('phone', '').replace('+', '') == provider_number.replace('+', ''):
+                # Clean the stored phone number for comparison
+                stored_phone = clean_phone_number(pdata.get('phone', ''))
+                if stored_phone == provider_number:
                     provider = {"id": pid, **pdata}
+                    print(f"Found provider: {provider}")
                     break
         
         if not provider:
             print(f"No provider found with number: {provider_number}")
             # Try to find by any booking with this provider number
-            booking = Booking.query.filter_by(
-                provider_phone=provider_number,
-                status='pending'
+            booking = Booking.query.filter(
+                db.func.replace(Booking.provider_phone, '+', '') == provider_number.replace('+', ''),
+                Booking.status == 'pending'
             ).order_by(Booking.created_at.desc()).first()
         else:
             # Find the most recent pending booking for this provider ID
