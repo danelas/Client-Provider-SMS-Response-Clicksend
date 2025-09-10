@@ -379,16 +379,12 @@ def create_booking():
             deadline_et = response_deadline.astimezone(et)
             deadline_str = deadline_et.strftime('%-I:%M %p ET')
             
-            # Send SMS to provider with clickable links instead of text responses
-            confirm_url = f"https://client-provider-sms-response-clicksend-1.onrender.com/confirm/{booking.id}"
-            decline_url = f"https://client-provider-sms-response-clicksend-1.onrender.com/decline/{booking.id}"
-            
+            # Send SMS to provider with the requested format and deadline (without customer phone number)
             message = (
                 f"Hey {provider['name']}, new request: {data['service_type']} "
                 f"at {data['address']} on {formatted_time}. "
-                f"\n\nClick to respond (until {deadline_str}):"
-                f"\n✅ ACCEPT: {confirm_url}"
-                f"\n❌ DECLINE: {decline_url}"
+                f"\n\nReply Y to ACCEPT or N to DECLINE"
+                f"\n\nYou have until {deadline_str} to respond."
             )
             
             # Log the SMS attempt
@@ -541,374 +537,163 @@ def decline_booking_manual(booking_id):
 
 @app.route('/webhook/sms', methods=['GET', 'POST', 'PUT'])
 def sms_webhook():
-    """Handle incoming SMS webhooks from TextMagic - simplified version"""
+    """Handle incoming SMS webhooks from TextMagic"""
     # Handle webhook validation (GET request)
     if request.method == 'GET':
         print("Webhook validation request received")
         return jsonify({"status": "ok"}), 200
     
-    # ALWAYS return 200 OK immediately to prevent TextMagic from deleting webhook
-    return jsonify({"status": "received"}), 200
-        
-    # Log all incoming requests for debugging
-    print(f"\n{'='*20} INCOMING WEBHOOK REQUEST {'='*20}")
-    print(f"Time: {datetime.utcnow().isoformat()}")
-    print(f"Method: {request.method}")
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Content-Type: {request.content_type}")
-    print(f"Form data: {request.form}")
-    print(f"JSON data: {request.get_json(silent=True) or 'No JSON data'}")
-    print(f"Raw data: {request.get_data()}")
-    print("-" * 60)
-    
-    # Force flush to ensure logs appear immediately
-    import sys
-    sys.stdout.flush()
-    
-    # Load providers data
     try:
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
-            print(f"Loaded {len(providers)} providers")
-    except Exception as e:
-        print(f"ERROR loading providers: {str(e)}")
-        return jsonify({"status": "error", "message": "Failed to load provider data"}), 500
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Content-Type: {request.content_type}")
-    print(f"Raw data: {request.get_data()}")
-    
-    # Parse the request data based on Content-Type
-    content_type = request.headers.get('Content-Type', '').lower()
-    data = {}
-    if 'application/json' in content_type:
-        data = request.get_json(silent=True) or {}
-    elif 'application/x-www-form-urlencoded' in content_type:
-        data = request.form.to_dict()
-    else:
-        # If content type is not specified or unrecognized, try to get data anyway
-        data = request.form.to_dict() or request.get_json(silent=True) or {}
+        # Log all incoming requests for debugging
+        print(f"\n{'='*20} INCOMING WEBHOOK REQUEST {'='*20}")
+        print(f"Time: {datetime.utcnow().isoformat()}")
+        print(f"Method: {request.method}")
+        print(f"Headers: {dict(request.headers)}")
+        print(f"Content-Type: {request.content_type}")
+        print(f"Form data: {request.form}")
+        print(f"JSON data: {request.get_json(silent=True) or 'No JSON data'}")
+        print(f"Raw data: {request.get_data()}")
+        print("-" * 60)
+        
+        # Parse the request data based on Content-Type
+        content_type = request.headers.get('Content-Type', '').lower()
+        data = {}
+        if 'application/json' in content_type:
+            data = request.get_json(silent=True) or {}
+        elif 'application/x-www-form-urlencoded' in content_type:
+            data = request.form.to_dict()
+        else:
+            data = request.form.to_dict() or request.get_json(silent=True) or {}
 
-    # If no data could be parsed, return an error
-    if not data:
-        raw_data = request.get_data(as_text=True)
-        error_msg = f"Could not parse webhook data. Content-Type: {content_type}. Raw data: {raw_data[:500]}"
-        print(f"ERROR: {error_msg}")
-        return jsonify({"status": "error", "message": error_msg}), 400
+        if not data:
+            print("No webhook data received")
+            return jsonify({"status": "ok"}), 200
+            
+        print(f"Parsed webhook data: {data}")
         
-    print(f"Parsed webhook data: {data}")
-    
-    # Validate required fields
-    if not data:
-        error_msg = "No data received in webhook"
-        print(f"ERROR: {error_msg}")
-        return jsonify({"status": "error", "message": error_msg}), 400
-    
-    try:
-            # Process the incoming message with TextMagic-specific handling
-        print("\n=== PROCESSING INCOMING MESSAGE ===")
-        print(f"Raw data: {data}")
-        
-        # TextMagic webhook format typically has message data at the root level
-        message_data = data
-        
-        # Extract message text - try multiple possible fields
+        # Extract message text and sender
         text = (
-            message_data.get('text') or 
-            message_data.get('body') or 
-            message_data.get('message', '')
+            data.get('text') or 
+            data.get('body') or 
+            data.get('message', '')
         ).strip().lower()
         
-        # Get sender's phone number - TextMagic uses 'from' or 'sender' field
-        from_number = (
-            message_data.get('from') or 
-            message_data.get('sender') or 
-            message_data.get('customer_phone', '')
+        from_number = clean_phone_number(
+            data.get('from') or 
+            data.get('sender') or 
+            data.get('customer_phone', '')
         )
         
-        # Clean the phone number
-        from_number = clean_phone_number(from_number)
-        
-        # Get recipient number (should be our dedicated number)
-        to_number = clean_phone_number(
-            message_data.get('receiver') or 
-            message_data.get('to') or 
-            message_data.get('recipient', '')
-        )
-        
-        # Log all extracted data
-        print(f"From: {from_number}")
-        print(f"To: {to_number}")
-        print(f"Message: '{text}'")
+        print(f"From: {from_number}, Message: '{text}'")
         
         if not text or not from_number:
-            error_msg = f"Missing required fields in webhook data. Text: '{text}', From: '{from_number}'"
-            print(f"ERROR: {error_msg}")
-            return jsonify({"status": "error", "message": error_msg}), 400
-            
-        print(f"Processing message from {from_number}: {text}")
+            print("Missing text or from_number")
+            return jsonify({"status": "ok"}), 200
         
-        # Get the recipient number (our dedicated number)
-        to_number = message_data.get('receiver', '') or message_data.get('to', '')
-        if to_number:
-            to_number = clean_phone_number(to_number)
-        
-        # Only process messages sent to our dedicated number (with flexible matching)
-        expected_number = clean_phone_number(TEXTMAGIC_FROM_NUMBER)
-        if to_number and expected_number:
-            # More flexible number matching - handle different formats
-            to_normalized = to_number.replace('+', '').replace('-', '').replace(' ', '')
-            expected_normalized = expected_number.replace('+', '').replace('-', '').replace(' ', '')
-            
-            if to_normalized != expected_normalized:
-                print(f"Ignoring message not for our dedicated number.")
-                print(f"  Received to_number: '{to_number}' (normalized: '{to_normalized}')")
-                print(f"  Expected number: '{expected_number}' (normalized: '{expected_normalized}')")
-                return jsonify({"status": "ignored", "message": "Not the dedicated number"}), 200
-            else:
-                print(f"✓ Message is for our dedicated number: {to_number}")
-        else:
-            print(f"⚠️ Warning: Missing to_number or TEXTMAGIC_FROM_NUMBER. Processing anyway.")
-            print(f"  to_number: '{to_number}'")
-            print(f"  TEXTMAGIC_FROM_NUMBER: '{TEXTMAGIC_FROM_NUMBER}'")
-                
-        # Get the provider's number (should be the sender)
-        provider_number = from_number
-        message_text = text
-        
-        print(f"Looking up provider with number: {provider_number}")
-        
-        # Get the provider details with more flexible phone matching
-        provider = None
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
-            for pid, pdata in providers.items():
-                # Clean the stored phone number for comparison
-                stored_phone = clean_phone_number(pdata.get('phone', ''))
-                
-                # Flexible phone number matching
-                provider_normalized = provider_number.replace('+', '').replace('-', '').replace(' ', '')
-                stored_normalized = stored_phone.replace('+', '').replace('-', '').replace(' ', '')
-                
-                if provider_normalized == stored_normalized:
-                    provider = {"id": pid, **pdata}
-                    print(f"✓ Found provider: {provider}")
-                    break
-                    
-        if not provider:
-            print(f"⚠️ No provider found with exact phone match for: {provider_number}")
-            print(f"Available provider phones: {[clean_phone_number(p.get('phone', '')) for p in providers.values()]}")
-        
-        # Find the most recent pending booking
+        # Find pending booking for this provider
         booking = None
-        if provider:
-            # First try to find by provider ID
-            booking = Booking.query.filter_by(
-                provider_id=provider['id'],
-                status='pending'
-            ).order_by(Booking.created_at.desc()).first()
-            print(f"Booking search by provider ID '{provider['id']}': {'Found' if booking else 'Not found'}")
-            
-        if not booking:
-            # Try to find by phone number with flexible matching
-            print(f"Searching for booking by phone number: {provider_number}")
-            all_pending = Booking.query.filter_by(status='pending').all()
-            
-            for b in all_pending:
-                if hasattr(b, 'provider_phone') and b.provider_phone:
-                    booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
-                    provider_phone_normalized = provider_number.replace('+', '').replace('-', '').replace(' ', '')
-                    
-                    if booking_phone_normalized == provider_phone_normalized:
-                        booking = b
-                        print(f"✓ Found booking by phone match: {booking.id}")
-                        
-                        # If we don't have provider details yet, try to get them from booking
-                        if not provider and booking.provider_id:
-                            provider_details = get_provider(booking.provider_id)
-                            if provider_details:
-                                provider = {"id": booking.provider_id, **provider_details}
-                                print(f"✓ Found provider via booking: {provider}")
-                        break
-
-        if not booking:
-            print(f"No pending booking found for provider: {provider_number}")
-            
-            # If we couldn't find a booking but have provider info, send a helpful message
-            if provider:
-                response_msg = (
-                    "We couldn't find any pending bookings for you. "
-                    "If you're responding to a booking request, please make sure to reply to the original message. "
-                    "Otherwise, please contact support."
-                )
-                send_sms(provider_number, response_msg)
+        all_pending = Booking.query.filter_by(status='pending').all()
+        
+        for b in all_pending:
+            if hasattr(b, 'provider_phone') and b.provider_phone:
+                booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
+                provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
                 
-            return jsonify({"status": "ignored", "message": "No pending booking found for this provider"}), 200
-
-        # Process the response
-        print(f"\n=== PROCESSING PROVIDER RESPONSE ===")
-        print(f"Provider: {provider_number}")
-        print(f"Message: {message_text}")
-        print(f"Booking ID: {booking.id if booking else 'N/A'}")
+                if booking_phone_normalized == provider_phone_normalized:
+                    booking = b
+                    print(f"✓ Found booking by phone match: {booking.id}")
+                    break
         
-        # Make response case-insensitive and log the processing
-        normalized_response = message_text.lower().strip()
-        print(f"Normalized response: '{normalized_response}'")
-        print(f"Available provider numbers: {[p.get('phone') for p in providers.values()] if providers else 'No providers'}")
-        print(f"Provider data: {provider}")
+        if not booking:
+            print(f"No pending booking found for provider: {from_number}")
+            return jsonify({"status": "ok"}), 200
         
-        if normalized_response in ['y', 'yes']:
+        # Get provider info
+        provider = get_provider(booking.provider_id)
+        
+        # Process Y/N response
+        if text in ['y', 'yes']:
             print(f"Processing CONFIRMATION for booking {booking.id}")
-            try:
-                # Update booking status
-                booking.status = 'confirmed'
-                booking.updated_at = datetime.utcnow()
-                db.session.commit()
-
-                # Prepare customer message
-                provider_name = provider.get('name', 'the provider') if provider else 'the provider'
-                
-                # Send confirmation to provider with customer details
-                if provider:
-                    # Format appointment time
-                    appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
-                    
-                    # Get customer name, fallback to empty string if not available
-                    customer_name = getattr(booking, 'customer_name', '')
-                    
-                    # Format service type (assuming format like '60 min · Mobile · $150')
-                    service_type = booking.service_type or '60 min · Mobile · $150'
-                    
-                    # Format address (using the provided example if not available)
-                    address = booking.address or '4400 Hillcrest Drive, Apt. 303, Hollywood, 33021'
-                    
-                    # Single confirmation message with all details
-                    provider_message = (
-                        "You've confirmed the booking! The customer has been notified.\n\n"
-                        f"Customer: {customer_name} - {booking.customer_phone}\n"
-                        f"Service: {service_type}\n"
-                        f"When: {appointment_time}\n"
-                        f"Address: {address}"
-                    )
-                    print(f"=== SENDING CONFIRMATION TO PROVIDER ===")
-                    print(f"Provider phone: {provider['phone']}")
-                    print(f"Provider message: {provider_message}")
-                    print(f"Message length: {len(provider_message)} characters")
-                    
-                    success, msg = send_sms(provider['phone'], provider_message)
-                    if success:
-                        print(f"✓ Successfully sent confirmation to provider: {msg}")
-                    else:
-                        print(f"✗ FAILED to send confirmation to provider: {msg}")
-                        # Log the failure for debugging
-                        error_log = f"Provider SMS failure - Phone: {provider['phone']}, Error: {msg}, Booking ID: {booking.id}"
-                        print(f"ERROR LOG: {error_log}")
-                    print("==========================================")
-                    # Don't send any other messages to provider
-
-                customer_message = (
-                    f"Your booking with {provider_name} has been confirmed!\n\n"
-                    f"Service: {booking.service_type or 'Not specified'}\n"
-                    f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
-                    f"Address: {booking.address or 'Not specified'}\n\n"
-                    "Thank you for choosing our service!"
-                )
-                
-                # Send confirmation to customer
-                print(f"=== SENDING CONFIRMATION TO CUSTOMER ===")
-                print(f"Customer phone: {booking.customer_phone}")
-                print(f"Customer message: {customer_message}")
-                print(f"Message length: {len(customer_message)} characters")
-                
-                success, msg = send_sms(booking.customer_phone, customer_message)
-                if success:
-                    print(f"✓ Successfully sent confirmation to customer: {msg}")
-                else:
-                    print(f"✗ FAILED to send confirmation to customer: {msg}")
-                    # Log the failure for debugging
-                    error_log = f"Customer SMS failure - Phone: {booking.customer_phone}, Error: {msg}, Booking ID: {booking.id}"
-                    print(f"ERROR LOG: {error_log}")
-                print("==========================================")
-
-                # No need to send a second message to provider
-
-                print(f"Booking {booking.id} confirmed successfully")
-                return jsonify({"status": "success", "message": "Booking confirmed"})
-
-            except Exception as e:
-                db.session.rollback()
-                error_msg = f"Error confirming booking: {str(e)}"
-                print(error_msg)
-                
-                # Notify admin of the error
-                try:
-                    admin_msg = f"Error confirming booking {booking.id if booking else 'N/A'}: {str(e)}"
-                    test_provider = get_provider(TEST_PROVIDER_ID)
-                    if test_provider:
-                        send_sms(test_provider['phone'], admin_msg)
-                except Exception as admin_err:
-                    print(f"Failed to notify admin: {str(admin_err)}")
-                    
-                return jsonify({"status": "error", "message": "Failed to confirm booking"}), 500
-
-        elif normalized_response in ['n', 'no']:
-            print(f"Provider {provider_number} REJECTED booking {booking.id}")
-            print(f"Provider data: {provider}")
-            print(f"Booking data: {booking.to_dict() if hasattr(booking, 'to_dict') else 'No booking data'}")
-            try:
-                # Update booking status
-                booking.status = 'rejected'
-                booking.updated_at = datetime.utcnow()
-                db.session.commit()
-
-                # Send alternative message to customer
-                alt_message = (
-                    "Hi, we're sorry for the inconvenience, but the provider you selected is not available. "
-                    "You can book with another provider here: goldtouchmobile.com/providers.\n\n"
-                    "We apologize for any inconvenience and hope to serve you soon!"
-                )
-                success, msg = send_sms(booking.customer_phone, alt_message)
-                if not success:
-                    print(f"Failed to send rejection to customer: {msg}")
-                    # Log this for follow-up
-
-                # Send acknowledgment to provider
-                ack_message = (
-                    "You've declined the booking. The customer has been notified and will look for another provider.\n\n"
-                    "Thank you for your prompt response!"
-                )
-                success, msg = send_sms(provider_number, ack_message)
-                if not success:
-                    print(f"Failed to send ack to provider: {msg}")
-
-                print(f"Booking {booking.id} rejected successfully")
-                return jsonify({"status": "success", "message": "Booking rejected"})
-
-            except Exception as e:
-                db.session.rollback()
-                print(f"Error rejecting booking: {str(e)}")
-                return jsonify({"status": "error", "message": "Failed to reject booking"}), 500
-
-        else:
-            # Not a valid response, ask for Y/N
-            print(f"INVALID response from {provider_number}: '{message_text}'. Asking for Y/N")
-            response_message = (
-                "We didn't understand your response. "
-                "Please reply with:\n"
-                "- 'Y' to CONFIRM the booking\n"
-                "- 'N' to DECLINE the booking\n\n"
-                "Thank you!"
-            )
-            success, msg = send_sms(provider_number, response_message)
-            if not success:
-                print(f"Failed to send instructions: {msg}")
             
-            print(f"Received invalid response from {provider_number}: {message_text}")
-            return jsonify({"status": "ignored", "message": "Invalid response, sent instructions"})
-
+            # Update booking status
+            booking.status = 'confirmed'
+            booking.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            # Get customer name
+            customer_name = getattr(booking, 'customer_name', '')
+            appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+            
+            # Send confirmation SMS to provider with customer details
+            provider_message = (
+                "✅ BOOKING CONFIRMED!\n\n"
+                f"Customer: {customer_name} - {booking.customer_phone}\n"
+                f"Service: {booking.service_type}\n"
+                f"When: {appointment_time}\n"
+                f"Address: {booking.address or 'Not specified'}\n\n"
+                "Please contact the customer to arrange details."
+            )
+            
+            print(f"=== SENDING CONFIRMATION TO PROVIDER ===")
+            print(f"Provider phone: {provider['phone'] if provider else 'Unknown'}")
+            print(f"Provider message: {provider_message}")
+            
+            if provider:
+                success, msg = send_sms(provider['phone'], provider_message)
+                if success:
+                    print(f"✓ Successfully sent confirmation to provider: {msg}")
+                else:
+                    print(f"✗ FAILED to send confirmation to provider: {msg}")
+            
+            # Send confirmation to customer
+            provider_name = provider.get('name', 'the provider') if provider else 'the provider'
+            customer_message = (
+                f"Your booking with {provider_name} has been confirmed!\n\n"
+                f"Service: {booking.service_type or 'Not specified'}\n"
+                f"When: {appointment_time}\n"
+                f"Address: {booking.address or 'Not specified'}\n\n"
+                "The provider will contact you shortly."
+            )
+            
+            success, msg = send_sms(booking.customer_phone, customer_message)
+            if success:
+                print(f"✓ Successfully sent confirmation to customer: {msg}")
+            else:
+                print(f"✗ FAILED to send confirmation to customer: {msg}")
+            
+            print(f"Booking {booking.id} confirmed successfully")
+            
+        elif text in ['n', 'no']:
+            print(f"Processing REJECTION for booking {booking.id}")
+            
+            # Update booking status
+            booking.status = 'rejected'
+            booking.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            # Send rejection message to customer
+            alt_message = (
+                "We're sorry, but the provider you selected is not available. "
+                "You can book with another provider here: goldtouchmobile.com/providers\n\n"
+                "We apologize for any inconvenience."
+            )
+            success, msg = send_sms(booking.customer_phone, alt_message)
+            if not success:
+                print(f"Failed to send rejection to customer: {msg}")
+            
+            print(f"Booking {booking.id} rejected successfully")
+        else:
+            print(f"Invalid response: '{text}'. Expected Y or N")
+        
+        # ALWAYS return 200 OK to prevent webhook deletion
+        return jsonify({"status": "ok"}), 200
+        
     except Exception as e:
+        print(f"Webhook error: {str(e)}")
         import traceback
-        print(f"Error processing webhook: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        print(traceback.format_exc())
+        # STILL return 200 OK even on error to prevent webhook deletion
+        return jsonify({"status": "ok"}), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
