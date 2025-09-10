@@ -535,7 +535,7 @@ def decline_booking_manual(booking_id):
         print(f"Error in manual decline: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/webhook/sms', methods=['GET', 'POST', 'PUT'])
+@app.route('/webhook/textmagic', methods=['GET', 'POST', 'PUT'])
 def sms_webhook():
     """Handle incoming SMS webhooks from TextMagic"""
     # Handle webhook validation (GET request)
