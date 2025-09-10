@@ -400,9 +400,15 @@ def sms_webhook():
         return jsonify({"status": "ok"}), 200
         
     # Log all incoming requests for debugging
-    print(f"\n=== INCOMING WEBHOOK REQUEST ===")
+    print(f"\n{'='*20} INCOMING WEBHOOK REQUEST {'='*20}")
     print(f"Time: {datetime.utcnow().isoformat()}")
     print(f"Method: {request.method}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Content-Type: {request.content_type}")
+    print(f"Form data: {request.form}")
+    print(f"JSON data: {request.get_json(silent=True) or 'No JSON data'}")
+    print(f"Raw data: {request.get_data()}")
+    print("-" * 60)
     
     # Load providers data
     try:
@@ -449,20 +455,41 @@ def sms_webhook():
         return jsonify({"status": "error", "message": error_msg}), 400
     
     try:
-        # Process the incoming message with proper field mappings
+        # Process the incoming message with detailed logging
+        print("\n=== PROCESSING INCOMING MESSAGE ===")
+        print(f"Raw data: {data}")
+        
+        # Try different ways to extract message data
         message_data = data.get('message', {}) or data
-        print(f"Processing message: {message_data}")
+        print(f"Message data: {message_data}")
         
-        # Extract the SMS content and sender using the correct field names
+        # Log all available fields for debugging
+        print("\nAvailable data fields:")
+        for key, value in data.items():
+            print(f"  {key}: {value}")
+            
+        # Extract the SMS content
         text = message_data.get('text', message_data.get('body', '')).strip().lower()
+        print(f"Extracted message text: '{text}'")
         
-        # Get the sender's phone number from the correct field
+        # Get the sender's phone number (trying multiple possible fields)
         from_number = data.get('customer_phone', '')
         if not from_number:
-            from_number = message_data.get('from', '')
-            
+            from_number = message_data.get('from', message_data.get('sender', ''))
+        print(f"Raw from_number: {from_number}")
+        
         # Clean the phone number
         from_number = clean_phone_number(from_number)
+        print(f"Cleaned from_number: {from_number}")
+        
+        # Log the webhook format for debugging
+        print("\nWebhook format appears to be:")
+        if 'customer_phone' in data:
+            print("- Using direct form fields (customer_phone)")
+        elif 'from' in message_data:
+            print("- Using nested message fields (message.from)")
+        else:
+            print("- Unknown webhook format")
         
         if not text or not from_number:
             error_msg = f"Missing required fields in webhook data. Text: '{text}', From: '{from_number}'"
