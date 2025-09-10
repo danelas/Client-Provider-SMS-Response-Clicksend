@@ -533,6 +533,13 @@ def sms_webhook():
                 db.func.replace(Booking.provider_phone, '+', '') == provider_number.replace('+', ''),
                 Booking.status == 'pending'
             ).order_by(Booking.created_at.desc()).first()
+
+            # If a booking is found, get the provider details from the booking's provider_id
+            if booking and booking.provider_id:
+                provider_details = get_provider(booking.provider_id)
+                if provider_details:
+                    provider = {"id": booking.provider_id, **provider_details}
+                    print(f"Found provider via booking: {provider}")
         else:
             # Find the most recent pending booking for this provider ID
             booking = Booking.query.filter_by(
@@ -823,13 +830,3 @@ def test_db():
             'database_url': os.getenv('DATABASE_URL', 'sqlite:///bookings.db')
         }), 500
 
-if __name__ == '__main__':
-    # Start background tasks
-    scheduler = start_background_tasks()
-    
-    # Start the web server
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true')
-    
-    # Shut down the scheduler when the app stops
-    scheduler.shutdown()
