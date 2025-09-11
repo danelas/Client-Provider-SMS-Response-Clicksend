@@ -3,6 +3,28 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+class Provider(db.Model):
+    """Stores provider information in the database"""
+    __tablename__ = 'providers'
+    
+    id = db.Column(db.String(50), primary_key=True)  # provider_id like 'provider1', 'provider2'
+    name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Provider {self.id}: {self.name} ({self.phone})>"
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'phone': self.phone,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
 class Booking(db.Model):
     """Stores the relationship between customer and provider"""
     __tablename__ = 'bookings'

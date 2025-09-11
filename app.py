@@ -5,7 +5,7 @@ import json
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
-from models import db, Booking
+from models import db, Booking, Provider
 from datetime import datetime, timedelta
 import pytz
 
@@ -21,9 +21,39 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Initialize database
 db.init_app(app)
 
-# Create tables
+# Create tables and migrate existing providers
 with app.app_context():
     db.create_all()
+    
+    # Migrate existing providers from JSON to database (one-time migration)
+    try:
+        # Check if we have any providers in the database already
+        existing_count = Provider.query.count()
+        
+        if existing_count == 0 and PROVIDERS_FILE.exists():
+            print("Migrating providers from JSON file to database...")
+            with open(PROVIDERS_FILE, 'r') as f:
+                json_providers = json.load(f)
+            
+            for provider_id, provider_data in json_providers.items():
+                # Check if provider already exists
+                if not Provider.query.get(provider_id):
+                    new_provider = Provider(
+                        id=provider_id,
+                        name=provider_data.get('name', ''),
+                        phone=provider_data.get('phone', '')
+                    )
+                    db.session.add(new_provider)
+            
+            db.session.commit()
+            migrated_count = Provider.query.count()
+            print(f"Successfully migrated {migrated_count} providers to database")
+        else:
+            print(f"Database already has {existing_count} providers, skipping migration")
+            
+    except Exception as e:
+        print(f"Error during provider migration: {str(e)}")
+        db.session.rollback()
 
 # TextMagic API credentials
 TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
@@ -38,26 +68,23 @@ PROVIDERS_FILE = Path(__file__).parent / 'providers.json'
 TEST_PROVIDER_ID = 'test_provider'
 
 def get_provider(provider_id):
-    """Look up provider details by ID"""
+    """Look up provider details by ID from database"""
     try:
         if not provider_id:
             print("Error: No provider ID provided")
             return None
             
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
-            
-        # First try to get the exact provider
-        provider = providers.get(provider_id)
+        provider = Provider.query.get(provider_id)
         
         if not provider:
-            print(f"Error: Provider with ID '{provider_id}' not found in providers.json")
+            print(f"Error: Provider with ID '{provider_id}' not found in database")
             # List available provider IDs for debugging
-            available_ids = list(providers.keys())
+            available_providers = Provider.query.all()
+            available_ids = [p.id for p in available_providers]
             print(f"Available provider IDs: {available_ids}")
             return None
             
-        return provider
+        return {'name': provider.name, 'phone': provider.phone}
         
     except Exception as e:
         print(f"Error loading providers: {str(e)}")
@@ -290,15 +317,15 @@ def create_booking():
         print(f"Provider ID from form: '{data['provider_id']}'")
         print(f"Provider ID type: {type(data['provider_id'])}")
         
-        # Check if providers.json file exists and is readable
+        # Check if providers exist in database
         try:
-            with open(PROVIDERS_FILE, 'r') as f:
-                all_providers = json.load(f)
-            print(f"Successfully loaded {len(all_providers)} providers from file")
-            print(f"Available provider IDs: {list(all_providers.keys())}")
+            all_providers = Provider.query.all()
+            provider_dict = {p.id: {'name': p.name, 'phone': p.phone} for p in all_providers}
+            print(f"Successfully loaded {len(all_providers)} providers from database")
+            print(f"Available provider IDs: {list(provider_dict.keys())}")
         except Exception as e:
-            print(f"ERROR reading providers.json: {str(e)}")
-            return jsonify({"status": "error", "message": f"Cannot read providers file: {str(e)}"}), 500
+            print(f"ERROR reading providers from database: {str(e)}")
+            return jsonify({"status": "error", "message": f"Cannot read providers from database: {str(e)}"}), 500
         
         provider = get_provider(data['provider_id'])
         
@@ -717,9 +744,9 @@ def health_check():
 def list_providers():
     """List all providers"""
     try:
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
-        return jsonify(providers), 200
+        providers = Provider.query.all()
+        provider_dict = {p.id: {'name': p.name, 'phone': p.phone} for p in providers}
+        return jsonify(provider_dict), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -764,16 +791,15 @@ def add_provider():
         if not all([provider_id, name, phone]):
             return jsonify({"error": "Missing required fields"}), 400
         
-        # Load current providers
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
+        # Check if provider already exists
+        existing_provider = Provider.query.get(provider_id)
+        if existing_provider:
+            return jsonify({"error": f"Provider with ID '{provider_id}' already exists"}), 400
         
-        # Add new provider
-        providers[provider_id] = {"name": name, "phone": phone}
-        
-        # Save back to file
-        with open(PROVIDERS_FILE, 'w') as f:
-            json.dump(providers, f, indent=2)
+        # Create new provider
+        new_provider = Provider(id=provider_id, name=name, phone=phone)
+        db.session.add(new_provider)
+        db.session.commit()
         
         return f"""
         <html>
@@ -795,19 +821,18 @@ def add_provider():
 def manage_providers():
     """Provider management interface"""
     try:
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
+        providers = Provider.query.all()
         
         provider_rows = ""
-        for pid, pdata in providers.items():
+        for provider in providers:
             provider_rows += f"""
             <tr>
-                <td>{pid}</td>
-                <td>{pdata.get('name', '')}</td>
-                <td>{pdata.get('phone', '')}</td>
+                <td>{provider.id}</td>
+                <td>{provider.name}</td>
+                <td>{provider.phone}</td>
                 <td>
-                    <a href="/providers/edit/{pid}" style="color: #007cba;">Edit</a> | 
-                    <a href="/providers/delete/{pid}" style="color: #d63384;" onclick="return confirm('Delete {pdata.get('name', pid)}?')">Delete</a>
+                    <a href="/providers/edit/{provider.id}" style="color: #007cba;">Edit</a> | 
+                    <a href="/providers/delete/{provider.id}" style="color: #d63384;" onclick="return confirm('Delete {provider.name}?')">Delete</a>
                 </td>
             </tr>
             """
@@ -830,12 +855,8 @@ def manage_providers():
             </table>
             
             <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 5px;">
-                <h3>Quick Git Commands (after making changes):</h3>
-                <code>
-                git add providers.json<br>
-                git commit -m "Update providers"<br>
-                git push origin master
-                </code>
+                <h3>✅ Providers are now stored in the database!</h3>
+                <p>Changes will persist across deployments automatically. No need to manually commit to Git.</p>
             </div>
         </body>
         </html>
@@ -848,15 +869,13 @@ def manage_providers():
 def edit_provider(provider_id):
     """Edit an existing provider"""
     try:
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
+        provider = Provider.query.get(provider_id)
         
-        if provider_id not in providers:
+        if not provider:
             return jsonify({"error": "Provider not found"}), 404
         
         if request.method == 'GET':
             # Show edit form
-            provider = providers[provider_id]
             return f"""
             <html>
             <head><title>Edit Provider</title></head>
@@ -865,11 +884,11 @@ def edit_provider(provider_id):
                 <form method="POST">
                     <p>
                         <label>Name:</label><br>
-                        <input type="text" name="name" value="{provider.get('name', '')}" required style="padding: 8px; width: 200px;">
+                        <input type="text" name="name" value="{provider.name}" required style="padding: 8px; width: 200px;">
                     </p>
                     <p>
                         <label>Phone:</label><br>
-                        <input type="text" name="phone" value="{provider.get('phone', '')}" required style="padding: 8px; width: 200px;">
+                        <input type="text" name="phone" value="{provider.phone}" required style="padding: 8px; width: 200px;">
                     </p>
                     <p>
                         <button type="submit" style="padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer;">Update Provider</button>
@@ -887,12 +906,10 @@ def edit_provider(provider_id):
         if not all([name, phone]):
             return jsonify({"error": "Missing required fields"}), 400
         
-        # Update provider
-        providers[provider_id] = {"name": name, "phone": phone}
-        
-        # Save back to file
-        with open(PROVIDERS_FILE, 'w') as f:
-            json.dump(providers, f, indent=2)
+        # Update provider in database
+        provider.name = name
+        provider.phone = phone
+        db.session.commit()
         
         return f"""
         <html>
@@ -914,25 +931,25 @@ def edit_provider(provider_id):
 def delete_provider(provider_id):
     """Delete a provider"""
     try:
-        with open(PROVIDERS_FILE, 'r') as f:
-            providers = json.load(f)
+        provider = Provider.query.get(provider_id)
         
-        if provider_id not in providers:
+        if not provider:
             return jsonify({"error": "Provider not found"}), 404
         
-        # Remove provider
-        deleted_provider = providers.pop(provider_id)
+        # Store provider info before deletion
+        deleted_name = provider.name
+        deleted_phone = provider.phone
         
-        # Save back to file
-        with open(PROVIDERS_FILE, 'w') as f:
-            json.dump(providers, f, indent=2)
+        # Remove provider from database
+        db.session.delete(provider)
+        db.session.commit()
         
         return f"""
         <html>
         <head><title>Provider Deleted</title></head>
         <body style="font-family: Arial; padding: 20px;">
             <h2>🗑️ Provider Deleted</h2>
-            <p><strong>Deleted:</strong> {deleted_provider.get('name', provider_id)} ({deleted_provider.get('phone', '')})</p>
+            <p><strong>Deleted:</strong> {deleted_name} ({deleted_phone})</p>
             <p><a href="/providers/manage">Back to Manage Providers</a></p>
         </body>
         </html>
