@@ -1075,6 +1075,72 @@ def start_background_tasks():
     scheduler.start()
     return scheduler
 
+@app.route('/migrate-providers', methods=['GET'])
+def migrate_providers():
+    """Manual endpoint to migrate providers from JSON to database"""
+    try:
+        # Check current database state
+        existing_count = Provider.query.count()
+        
+        # Check if JSON file exists
+        if not PROVIDERS_FILE.exists():
+            return jsonify({
+                "status": "error",
+                "message": "providers.json file not found",
+                "existing_providers": existing_count
+            }), 404
+        
+        # Load providers from JSON
+        with open(PROVIDERS_FILE, 'r') as f:
+            json_providers = json.load(f)
+        
+        migrated_count = 0
+        skipped_count = 0
+        
+        for provider_id, provider_data in json_providers.items():
+            # Check if provider already exists
+            existing_provider = Provider.query.get(provider_id)
+            
+            if existing_provider:
+                skipped_count += 1
+                print(f"Provider {provider_id} already exists, skipping")
+                continue
+            
+            # Create new provider
+            new_provider = Provider(
+                id=provider_id,
+                name=provider_data.get('name', ''),
+                phone=provider_data.get('phone', '')
+            )
+            db.session.add(new_provider)
+            migrated_count += 1
+            print(f"Added provider {provider_id}: {provider_data.get('name')} - {provider_data.get('phone')}")
+        
+        # Commit all changes
+        db.session.commit()
+        
+        final_count = Provider.query.count()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Migration completed successfully",
+            "details": {
+                "providers_in_json": len(json_providers),
+                "existing_before": existing_count,
+                "migrated": migrated_count,
+                "skipped": skipped_count,
+                "total_after": final_count
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "status": "error",
+            "message": f"Migration failed: {str(e)}",
+            "type": type(e).__name__
+        }), 500
+
 @app.route('/test-sms', methods=['GET'])
 def test_sms():
     """Test endpoint to verify SMS functionality"""
