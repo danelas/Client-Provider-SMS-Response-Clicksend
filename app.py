@@ -1082,8 +1082,11 @@ def migrate_providers():
         # Check current database state
         existing_count = Provider.query.count()
         
+        # Define providers file path
+        providers_file = Path(__file__).parent / 'providers.json'
+        
         # Check if JSON file exists
-        if not PROVIDERS_FILE.exists():
+        if not providers_file.exists():
             return jsonify({
                 "status": "error",
                 "message": "providers.json file not found",
@@ -1091,7 +1094,7 @@ def migrate_providers():
             }), 404
         
         # Load providers from JSON
-        with open(PROVIDERS_FILE, 'r') as f:
+        with open(providers_file, 'r') as f:
             json_providers = json.load(f)
         
         migrated_count = 0
