@@ -4,3 +4,5 @@ gunicorn==21.2.0
 flask-sqlalchemy==3.1.1
 requests==2.31.0
 pytz==2023.3
+psycopg2-binary==2.9.7
+APScheduler==3.10.4
