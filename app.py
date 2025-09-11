@@ -1144,6 +1144,60 @@ def migrate_providers():
             "type": type(e).__name__
         }), 500
 
+@app.route('/debug-providers', methods=['GET'])
+def debug_providers():
+    """Debug endpoint to check provider status"""
+    try:
+        # Check database providers
+        db_providers = Provider.query.all()
+        db_count = len(db_providers)
+        
+        # Check JSON file
+        providers_file = Path(__file__).parent / 'providers.json'
+        json_exists = providers_file.exists()
+        json_count = 0
+        json_sample = {}
+        
+        if json_exists:
+            try:
+                with open(providers_file, 'r') as f:
+                    json_data = json.load(f)
+                json_count = len(json_data)
+                # Get first 3 providers as sample
+                json_sample = dict(list(json_data.items())[:3])
+            except Exception as e:
+                json_sample = {"error": str(e)}
+        
+        # Get database sample
+        db_sample = []
+        for provider in db_providers[:3]:
+            db_sample.append({
+                "id": provider.id,
+                "name": provider.name,
+                "phone": provider.phone
+            })
+        
+        return jsonify({
+            "database": {
+                "count": db_count,
+                "sample": db_sample
+            },
+            "json_file": {
+                "exists": json_exists,
+                "count": json_count,
+                "sample": json_sample
+            },
+            "migration_url": "/migrate-providers",
+            "file_path": str(providers_file)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
+
 @app.route('/test-sms', methods=['GET'])
 def test_sms():
     """Test endpoint to verify SMS functionality"""
