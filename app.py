@@ -444,14 +444,12 @@ def create_booking():
                     f"Hey {provider['name']}, new request: {data['service_type']} "
                     f"on {formatted_time}. {short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
-                    f"\n\nYou have until {deadline_str} to respond."
                 )
             else:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
                     f"at {data['address']} on {formatted_time}. {short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
-                    f"\n\nYou have until {deadline_str} to respond."
                 )
             
             # Log the SMS attempt
