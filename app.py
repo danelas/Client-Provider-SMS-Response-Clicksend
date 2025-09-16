@@ -354,8 +354,14 @@ def create_booking():
                 # Fall back to ISO format if AM/PM format fails
                 appointment_dt = datetime.fromisoformat(data['datetime'])
                 
-            # Calculate response deadline (15 minutes from now)
-            response_deadline = datetime.utcnow() + timedelta(minutes=15)
+            # Calculate response deadline (15 minutes from now) - make it timezone aware
+            utc = pytz.UTC
+            current_time = datetime.utcnow()
+            response_deadline = utc.localize(current_time) + timedelta(minutes=15)
+            
+            # Check if this is a last-minute booking (appointment within 1 hour)
+            time_until_appointment = appointment_dt - current_time
+            is_last_minute = time_until_appointment <= timedelta(hours=1)
             
             # Extract customer name from form data (handling both direct and nested formats)
             customer_name = ''
@@ -430,17 +436,20 @@ def create_booking():
             # Check if service is In-Studio to exclude address
             is_in_studio = 'In-Studio' in data['service_type'] or 'in-studio' in data['service_type'].lower()
             
+            # Add short-notice bonus line if it's a last-minute booking
+            short_notice_line = "\n$20 Short-Notice Bonus" if is_last_minute else ""
+            
             if is_in_studio:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
-                    f"on {formatted_time}. "
+                    f"on {formatted_time}. {short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                     f"\n\nYou have until {deadline_str} to respond."
                 )
             else:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
-                    f"at {data['address']} on {formatted_time}. "
+                    f"at {data['address']} on {formatted_time}. {short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                     f"\n\nYou have until {deadline_str} to respond."
                 )
