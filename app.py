@@ -427,12 +427,23 @@ def create_booking():
             deadline_str = deadline_et.strftime('%-I:%M %p ET')
             
             # Send SMS to provider with the requested format and deadline (without customer phone number)
-            message = (
-                f"Hey {provider['name']}, new request: {data['service_type']} "
-                f"at {data['address']} on {formatted_time}. "
-                f"\n\nReply Y to ACCEPT or N to DECLINE"
-                f"\n\nYou have until {deadline_str} to respond."
-            )
+            # Check if service is In-Studio to exclude address
+            is_in_studio = 'In-Studio' in data['service_type'] or 'in-studio' in data['service_type'].lower()
+            
+            if is_in_studio:
+                message = (
+                    f"Hey {provider['name']}, new request: {data['service_type']} "
+                    f"on {formatted_time}. "
+                    f"\n\nReply Y to ACCEPT or N to DECLINE"
+                    f"\n\nYou have until {deadline_str} to respond."
+                )
+            else:
+                message = (
+                    f"Hey {provider['name']}, new request: {data['service_type']} "
+                    f"at {data['address']} on {formatted_time}. "
+                    f"\n\nReply Y to ACCEPT or N to DECLINE"
+                    f"\n\nYou have until {deadline_str} to respond."
+                )
             
             # Log the SMS attempt
             print(f"Sending SMS to provider {provider['name']} ({provider['phone']}): {message}")
@@ -720,9 +731,8 @@ def sms_webhook():
             
             # Send rejection message to customer
             alt_message = (
-                "We're sorry, but the provider you selected is not available. "
-                "You can book with another provider here: goldtouchmobile.com/providers\n\n"
-                "We apologize for any inconvenience."
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
+                "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
             )
             success, msg = send_sms(booking.customer_phone, alt_message)
             if not success:
