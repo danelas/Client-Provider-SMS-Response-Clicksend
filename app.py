@@ -517,10 +517,7 @@ def confirm_booking_manual(booking_id):
         
         provider_message = (
             "✅ BOOKING CONFIRMED!\n\n"
-            f"Customer: {customer_name} - {booking.customer_phone}\n"
-            f"Service: {booking.service_type}\n"
-            f"When: {appointment_time}\n"
-            f"Address: {booking.address or 'Not specified'}\n\n"
+            f"Customer: {customer_name} - {booking.customer_phone}\n\n"
             "Please contact the customer to arrange details."
         )
         
@@ -692,10 +689,7 @@ def sms_webhook():
             # Send confirmation SMS to provider with customer details
             provider_message = (
                 "✅ BOOKING CONFIRMED!\n\n"
-                f"Customer: {customer_name} - {booking.customer_phone}\n"
-                f"Service: {booking.service_type}\n"
-                f"When: {appointment_time}\n"
-                f"Address: {booking.address or 'Not specified'}\n\n"
+                f"Customer: {customer_name} - {booking.customer_phone}\n\n"
                 "Please contact the customer to arrange details."
             )
             
