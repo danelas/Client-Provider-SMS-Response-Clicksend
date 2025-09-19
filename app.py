@@ -62,13 +62,7 @@ with app.app_context():
         print(f"Error during provider migration: {str(e)}")
         db.session.rollback()
 
-# Start background tasks for production (moved outside of __main__ block)
-try:
-    scheduler = start_background_tasks()
-    print("Background tasks started successfully")
-except Exception as e:
-    print(f"Warning: Could not start background tasks: {e}")
-    scheduler = None
+# Background scheduler will be initialized after function definitions
 
 # TextMagic API credentials
 TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
@@ -1100,6 +1094,14 @@ def start_background_tasks():
     )
     scheduler.start()
     return scheduler
+
+# Start background tasks for production (after function is defined)
+try:
+    scheduler = start_background_tasks()
+    print("Background tasks started successfully")
+except Exception as e:
+    print(f"Warning: Could not start background tasks: {e}")
+    scheduler = None
 
 @app.route('/migrate-providers', methods=['GET'])
 def migrate_providers():
