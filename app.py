@@ -62,6 +62,14 @@ with app.app_context():
         print(f"Error during provider migration: {str(e)}")
         db.session.rollback()
 
+# Start background tasks for production (moved outside of __main__ block)
+try:
+    scheduler = start_background_tasks()
+    print("Background tasks started successfully")
+except Exception as e:
+    print(f"Warning: Could not start background tasks: {e}")
+    scheduler = None
+
 # TextMagic API credentials
 TEXTMAGIC_USERNAME = os.getenv('TEXTMAGIC_USERNAME')
 TEXTMAGIC_API_KEY = os.getenv('TEXTMAGIC_API_KEY')
@@ -1232,8 +1240,74 @@ def test_sms():
     return jsonify({
         "status": "success" if success else "error",
         "message": result,
-        "number": test_number
+        "phone_number": test_number
     })
+
+@app.route('/debug-customer-sms', methods=['GET'])
+def debug_customer_sms():
+    """Debug endpoint to test customer SMS scenarios"""
+    try:
+        customer_phone = request.args.get('customer_phone')
+        scenario = request.args.get('scenario', 'confirmation')  # confirmation, rejection, timeout
+        
+        if not customer_phone:
+            return jsonify({
+                "status": "error",
+                "message": "Missing 'customer_phone' parameter"
+            }), 400
+        
+        # Clean the phone number
+        cleaned_phone = clean_phone_number(customer_phone)
+        
+        # Test different customer SMS scenarios
+        if scenario == 'confirmation':
+            message = (
+                "Your booking with Test Provider has been confirmed!\n\n"
+                "Service: Test Service\n"
+                "When: Test Time\n"
+                "Address: Test Address\n\n"
+                "The provider will contact you shortly."
+            )
+        elif scenario == 'rejection':
+            message = (
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
+                "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
+            )
+        elif scenario == 'timeout':
+            message = (
+                "We're sorry, but the provider hasn't responded to your booking request. "
+                "We're working to find you an alternative provider. "
+                "You can also book with another provider here: goldtouchmobile.com/providers.\n\n"
+                "We apologize for any inconvenience and hope to serve you soon!"
+            )
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid scenario. Use: confirmation, rejection, or timeout"
+            }), 400
+        
+        print(f"=== DEBUGGING CUSTOMER SMS ===")
+        print(f"Original phone: {customer_phone}")
+        print(f"Cleaned phone: {cleaned_phone}")
+        print(f"Scenario: {scenario}")
+        print(f"Message: {message}")
+        
+        success, result = send_sms(cleaned_phone, message)
+        
+        return jsonify({
+            "status": "success" if success else "error",
+            "message": result,
+            "original_phone": customer_phone,
+            "cleaned_phone": cleaned_phone,
+            "scenario": scenario,
+            "sms_message": message
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Debug error: {str(e)}"
+        }), 500
 
 @app.route('/test-webhook', methods=['POST'])
 def test_webhook():
@@ -1377,13 +1451,6 @@ def webhook_status():
         }), 500
 
 if __name__ == '__main__':
-    # Start background tasks if running directly
-    try:
-        scheduler = start_background_tasks()
-        print("Background tasks started successfully")
-    except Exception as e:
-        print(f"Warning: Could not start background tasks: {e}")
-    
-    # Run the app
+    # Run the app (background tasks already started above)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
