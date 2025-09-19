@@ -23,6 +23,14 @@ if database_url and database_url.startswith('postgres://'):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///bookings.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Add SSL configuration for PostgreSQL
+if database_url and 'postgresql://' in database_url:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {
+            'sslmode': 'require'
+        }
+    }
+
 print(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI'][:20]}...")
 
 # Initialize database
@@ -1047,9 +1055,13 @@ def check_expired_bookings():
     with app.app_context():
         try:
             now = datetime.utcnow()
+            # Only check bookings from the last 24 hours to prevent processing old bookings
+            cutoff_time = now - timedelta(hours=24)
+            
             expired_bookings = Booking.query.filter(
                 Booking.status == 'pending',
-                Booking.response_deadline <= now
+                Booking.response_deadline <= now,
+                Booking.created_at >= cutoff_time  # Only recent bookings
             ).all()
             
             for booking in expired_bookings:
@@ -1096,9 +1108,13 @@ def start_background_tasks():
     return scheduler
 
 # Start background tasks for production (after function is defined)
+# TEMPORARILY DISABLED to prevent multiple SMS to old bookings
+# Will re-enable after fixing the expired bookings logic
 try:
-    scheduler = start_background_tasks()
-    print("Background tasks started successfully")
+    # scheduler = start_background_tasks()
+    # print("Background tasks started successfully")
+    print("Background tasks DISABLED temporarily to prevent multiple SMS")
+    scheduler = None
 except Exception as e:
     print(f"Warning: Could not start background tasks: {e}")
     scheduler = None
@@ -1244,6 +1260,40 @@ def test_sms():
         "message": result,
         "phone_number": test_number
     })
+
+@app.route('/cleanup-old-bookings', methods=['GET'])
+def cleanup_old_bookings():
+    """Manually clean up old pending bookings without sending SMS"""
+    try:
+        now = datetime.utcnow()
+        # Mark all old pending bookings as expired without SMS
+        cutoff_time = now - timedelta(hours=1)  # Older than 1 hour
+        
+        old_bookings = Booking.query.filter(
+            Booking.status == 'pending',
+            Booking.created_at < cutoff_time
+        ).all()
+        
+        updated_count = 0
+        for booking in old_bookings:
+            booking.status = 'expired'
+            booking.updated_at = now
+            updated_count += 1
+        
+        db.session.commit()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Cleaned up {updated_count} old pending bookings",
+            "updated_count": updated_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "status": "error",
+            "message": f"Error cleaning up bookings: {str(e)}"
+        }), 500
 
 @app.route('/debug-customer-sms', methods=['GET'])
 def debug_customer_sms():
