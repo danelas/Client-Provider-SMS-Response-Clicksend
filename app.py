@@ -359,19 +359,35 @@ def create_booking():
         try:
             # Try parsing with AM/PM format first
             try:
-                appointment_dt = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
+                appointment_dt_naive = datetime.strptime(data['datetime'], '%m/%d/%Y %I:%M %p')
             except ValueError:
                 # Fall back to ISO format if AM/PM format fails
-                appointment_dt = datetime.fromisoformat(data['datetime'])
+                appointment_dt_naive = datetime.fromisoformat(data['datetime'])
+            
+            # Convert appointment time from Eastern Time to UTC for proper comparison
+            et = pytz.timezone('US/Eastern')
+            appointment_dt_et = et.localize(appointment_dt_naive)
+            appointment_dt = appointment_dt_et.astimezone(pytz.UTC)
                 
             # Calculate response deadline (15 minutes from now) - make it timezone aware
             utc = pytz.UTC
             current_time = datetime.utcnow()
-            response_deadline = utc.localize(current_time) + timedelta(minutes=15)
+            current_time_utc = utc.localize(current_time)
+            response_deadline = current_time_utc + timedelta(minutes=15)
             
             # Check if this is a last-minute booking (appointment within 1 hour)
-            time_until_appointment = appointment_dt - current_time
+            # Both times are now in UTC for proper comparison
+            time_until_appointment = appointment_dt - current_time_utc
             is_last_minute = time_until_appointment <= timedelta(hours=1)
+            
+            print(f"=== TIMEZONE DEBUG ===")
+            print(f"Appointment time (naive): {appointment_dt_naive}")
+            print(f"Appointment time (ET): {appointment_dt_et}")
+            print(f"Appointment time (UTC): {appointment_dt}")
+            print(f"Current time (UTC): {current_time_utc}")
+            print(f"Time until appointment: {time_until_appointment}")
+            print(f"Is last minute: {is_last_minute}")
+            print("=====================")
             
             # Extract customer name from form data (handling both direct and nested formats)
             customer_name = ''
@@ -389,7 +405,7 @@ def create_booking():
                     provider_id=data['provider_id'],
                     service_type=data['service_type'],
                     address=data.get('address', ''),
-                    appointment_time=appointment_dt,
+                    appointment_time=appointment_dt,  # Now properly in UTC
                     status='pending',
                     response_deadline=response_deadline
                 )
