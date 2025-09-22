@@ -119,6 +119,23 @@ def clean_phone_number(phone):
         cleaned = f"+1{cleaned}" if len(cleaned) == 10 else f"+{cleaned}"
     return cleaned
 
+def format_appointment_time_et(appointment_time):
+    """Convert UTC appointment time to Eastern Time for display"""
+    if not appointment_time:
+        return 'Not specified'
+    
+    utc = pytz.UTC
+    et = pytz.timezone('US/Eastern')
+    
+    # Handle both timezone-aware and naive datetime objects
+    if appointment_time.tzinfo is None:
+        appointment_time_utc = utc.localize(appointment_time)
+    else:
+        appointment_time_utc = appointment_time
+    
+    appointment_time_et = appointment_time_utc.astimezone(et)
+    return appointment_time_et.strftime('%A, %B %d at %I:%M %p ET')
+
 def send_sms(to_number, message, from_number=None):
     """Send SMS using TextMagic API"""
     try:
@@ -539,7 +556,7 @@ def confirm_booking_manual(booking_id):
         
         # Send confirmation SMS to provider with customer details
         customer_name = getattr(booking, 'customer_name', '')
-        appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+        appointment_time = format_appointment_time_et(booking.appointment_time)
         
         provider_message = (
             "✅ BOOKING CONFIRMED!\n\n"
@@ -710,7 +727,7 @@ def sms_webhook():
             
             # Get customer name
             customer_name = getattr(booking, 'customer_name', '')
-            appointment_time = booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'
+            appointment_time = format_appointment_time_et(booking.appointment_time)
             
             # Send confirmation SMS to provider with customer details
             provider_message = (
@@ -1029,18 +1046,20 @@ def debug_webhook():
         provider_name = provider.get('name', 'the provider') if provider else 'the provider'
         
         # Format messages (but don't send them)
+        appointment_time = format_appointment_time_et(booking.appointment_time)
+        
         provider_message = (
             "You've confirmed the booking! The customer has been notified.\n\n"
             f"Customer: {getattr(booking, 'customer_name', '')} - {booking.customer_phone}\n"
             f"Service: {booking.service_type}\n"
-            f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+            f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}"
         )
         
         customer_message = (
             f"Your booking with {provider_name} has been confirmed!\n\n"
             f"Service: {booking.service_type or 'Not specified'}\n"
-            f"When: {booking.appointment_time.strftime('%A, %B %d at %I:%M %p') if booking.appointment_time else 'Not specified'}\n"
+            f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}\n\n"
             "Thank you for choosing our service!"
         )
