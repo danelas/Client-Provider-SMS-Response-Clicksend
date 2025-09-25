@@ -35,6 +35,7 @@ class Booking(db.Model):
     provider_phone = db.Column(db.String(20), nullable=False, index=True)
     provider_id = db.Column(db.String(50), nullable=True)  # Store the provider ID (e.g., 'prov_amy')
     service_type = db.Column(db.String(100), nullable=True)
+    add_ons = db.Column(db.Text, nullable=True)  # Optional add-ons field
     address = db.Column(db.Text, nullable=True)
     appointment_time = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), default='pending')  # pending, confirmed, rejected, expired
@@ -52,6 +53,7 @@ class Booking(db.Model):
             'provider_phone': self.provider_phone,
             'provider_id': self.provider_id,
             'service_type': self.service_type,
+            'add_ons': self.add_ons,
             'address': self.address,
             'appointment_time': self.appointment_time.isoformat() if self.appointment_time else None,
             'status': self.status,

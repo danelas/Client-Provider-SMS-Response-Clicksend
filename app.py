@@ -421,6 +421,7 @@ def create_booking():
                     provider_phone=provider['phone'],  # Add provider's phone number
                     provider_id=data['provider_id'],
                     service_type=data['service_type'],
+                    add_ons=data.get('add', ''),  # Store add-ons from form field 'add'
                     address=data.get('address', ''),
                     appointment_time=appointment_dt,  # Now properly in UTC
                     status='pending',
@@ -482,16 +483,20 @@ def create_booking():
             # Add short-notice bonus line if it's a last-minute booking
             short_notice_line = "\n$20 Short-Notice Bonus" if is_last_minute else ""
             
+            # Add add-ons line if present
+            add_ons_text = data.get('add', '').strip()
+            add_ons_line = f"\nAdd-ons: {add_ons_text}" if add_ons_text else ""
+            
             if is_in_studio:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
-                    f"on {formatted_time}. {short_notice_line}"
+                    f"on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
-                    f"at {data['address']} on {formatted_time}. {short_notice_line}"
+                    f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             
@@ -569,9 +574,10 @@ def confirm_booking_manual(booking_id):
             print(f"Failed to send confirmation to provider: {msg}")
         
         # Send confirmation to customer
+        add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
         customer_message = (
             f"Your booking with {provider_name} has been confirmed!\n\n"
-            f"Service: {booking.service_type or 'Not specified'}\n"
+            f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
             f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}\n\n"
             "The provider will contact you shortly."
@@ -581,6 +587,7 @@ def confirm_booking_manual(booking_id):
         if not success:
             print(f"Failed to send confirmation to customer: {msg}")
         
+        add_ons_display = f"<p>Add-ons: {booking.add_ons}</p>" if booking.add_ons and booking.add_ons.strip() else ""
         return f"""
         <html>
         <head><title>Booking Confirmed</title></head>
@@ -589,6 +596,7 @@ def confirm_booking_manual(booking_id):
             <p>Customer details have been sent to your phone.</p>
             <p>Customer: {customer_name} - {booking.customer_phone}</p>
             <p>Service: {booking.service_type}</p>
+            {add_ons_display}
             <p>When: {appointment_time}</p>
             <p>Address: {booking.address or 'Not specified'}</p>
         </body>
@@ -749,9 +757,10 @@ def sms_webhook():
             
             # Send confirmation to customer
             provider_name = provider.get('name', 'the provider') if provider else 'the provider'
+            add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
             customer_message = (
                 f"Your booking with {provider_name} has been confirmed!\n\n"
-                f"Service: {booking.service_type or 'Not specified'}\n"
+                f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
                 f"When: {appointment_time}\n"
                 f"Address: {booking.address or 'Not specified'}\n\n"
                 "The provider will contact you shortly."
@@ -1048,17 +1057,19 @@ def debug_webhook():
         # Format messages (but don't send them)
         appointment_time = format_appointment_time_et(booking.appointment_time)
         
+        add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
+        
         provider_message = (
             "You've confirmed the booking! The customer has been notified.\n\n"
             f"Customer: {getattr(booking, 'customer_name', '')} - {booking.customer_phone}\n"
-            f"Service: {booking.service_type}\n"
+            f"Service: {booking.service_type}{add_ons_info}\n"
             f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}"
         )
         
         customer_message = (
             f"Your booking with {provider_name} has been confirmed!\n\n"
-            f"Service: {booking.service_type or 'Not specified'}\n"
+            f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
             f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}\n\n"
             "Thank you for choosing our service!"
