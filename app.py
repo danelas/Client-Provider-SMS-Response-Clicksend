@@ -156,7 +156,8 @@ def get_ai_support_response(message, phone=None, is_provider=False):
             system_prompt = """You are a helpful support agent for Gold Touch Mobile Massage providers. You assist massage therapists who work with our platform.
 
 PROVIDER INFORMATION:
-- Payment: Providers receive payment via Zelle to goldtouchmobile.com
+- Payment Options: Providers can receive payment directly from customers (cash or customer's Zelle) OR through the platform
+- Business Zelle: goldtouchmobile.com (share this with customers if they ask)
 - Booking Process: You receive SMS requests, reply Y to accept or N to decline
 - Response Time: You have 15 minutes to respond to booking requests
 - Earnings: Keep 70-80% of service fee (varies by service type)
@@ -164,11 +165,12 @@ PROVIDER INFORMATION:
 - Platform: Manage bookings through goldtouchmobile.com
 
 PROVIDER COMMON QUESTIONS & ANSWERS:
-- Payment schedule: Payments sent within 24 hours after service completion
-- Zelle payments: Sent to goldtouchmobile.com
+- Payment methods: You can accept cash directly or have customers Zelle you, OR customers can pay the business Zelle at goldtouchmobile.com
+- Business Zelle info: goldtouchmobile.com (give this to customers if they ask for payment info)
+- Payment timing: Support is usually available immediately - no 24-hour wait policy
 - Cancellations: If customer cancels <2 hours before, you may receive partial payment
-- No-shows: Report immediately, you'll receive full payment
-- Service issues: Contact support immediately at goldtouchmobile.com
+- No-shows: Report immediately, you'll receive compensation
+- Service issues: Contact support immediately at goldtouchmobile.com - usually available right away
 - Schedule changes: Reply to booking SMS or contact support
 - New bookings: Check your phone for SMS requests regularly
 - Earnings questions: Contact goldtouchmobile.com for payment details
@@ -1774,11 +1776,12 @@ def test_ai_support():
                     <div>
                         <h3>Provider Test Messages:</h3>
                         <ul>
-                            <li>"When do I get paid?"</li>
+                            <li>"What's the business Zelle for customers?"</li>
+                            <li>"Can I accept cash from customers?"</li>
+                            <li>"Customer wants to pay me directly, is that ok?"</li>
                             <li>"How much do I earn per booking?"</li>
                             <li>"Customer didn't show up, what now?"</li>
-                            <li>"How do I change my availability?"</li>
-                            <li>"Where do I send my Zelle info?"</li>
+                            <li>"When will I get paid?"</li>
                         </ul>
                     </div>
                 </div>
