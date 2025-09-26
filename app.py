@@ -491,13 +491,13 @@ def create_booking():
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
                     f"on {formatted_time}.{add_ons_line}{short_notice_line}"
-                    f"\n\nReply Y{booking.id} to ACCEPT or N{booking.id} to DECLINE"
+                    f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
                     f"Hey {provider['name']}, new request: {data['service_type']} "
                     f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
-                    f"\n\nReply Y{booking.id} to ACCEPT or N{booking.id} to DECLINE"
+                    f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             
             # Log the SMS attempt
@@ -703,55 +703,40 @@ def sms_webhook():
             print("Missing text or from_number")
             return jsonify({"status": "ok"}), 200
         
-        # Parse booking ID from response (Y123 or N123 format)
-        import re
-        booking_id = None
+        # Determine response type from simple Y/N
         response_type = None
-        
-        # Try to extract booking ID from response like "Y123" or "N123"
-        match = re.match(r'^([YyNn])(\d+)$', text.strip())
-        if match:
-            response_type = match.group(1).lower()
-            booking_id = int(match.group(2))
-            print(f"✓ Parsed response: {response_type.upper()}{booking_id}")
+        if text.lower() in ['y', 'yes']:
+            response_type = 'y'
+        elif text.lower() in ['n', 'no']:
+            response_type = 'n'
         else:
-            # Fallback to old behavior for backward compatibility
-            print(f"⚠️ Response '{text}' doesn't include booking ID, using fallback method")
-            
-            # Find pending booking for this provider (old method)
-            all_pending = Booking.query.filter_by(status='pending').all()
-            
-            for b in all_pending:
-                if hasattr(b, 'provider_phone') and b.provider_phone:
-                    booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
-                    provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
-                    
-                    if booking_phone_normalized == provider_phone_normalized:
-                        booking_id = b.id
-                        response_type = 'y' if text.lower() in ['y', 'yes'] else 'n' if text.lower() in ['n', 'no'] else None
-                        print(f"✓ Found booking by phone match (fallback): {booking_id}")
-                        break
-        
-        if not booking_id or not response_type:
-            print(f"Could not determine booking ID or response type from: '{text}' for provider: {from_number}")
+            print(f"Invalid response: '{text}'. Expected Y or N")
             return jsonify({"status": "ok"}), 200
         
-        # Get the specific booking by ID
-        booking = Booking.query.get(booking_id)
-        if not booking:
-            print(f"Booking {booking_id} not found")
-            return jsonify({"status": "ok"}), 200
-        
-        if booking.status != 'pending':
-            print(f"Booking {booking_id} is not pending (status: {booking.status})")
-            return jsonify({"status": "ok"}), 200
-        
-        # Verify the booking belongs to this provider
+        # Find the most recent pending booking for this provider (timestamp-based)
+        # Normalize phone numbers for comparison
         provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
-        booking_phone_normalized = clean_phone_number(booking.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
         
-        if booking_phone_normalized != provider_phone_normalized:
-            print(f"Security check failed: Booking {booking_id} doesn't belong to provider {from_number}")
+        # Get all pending bookings for this provider, ordered by most recent first
+        all_pending = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).all()
+        
+        booking = None
+        for b in all_pending:
+            if hasattr(b, 'provider_phone') and b.provider_phone:
+                booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
+                
+                if booking_phone_normalized == provider_phone_normalized:
+                    # Add safety check: only process responses within 30 minutes of booking creation
+                    time_since_booking = datetime.utcnow() - b.created_at
+                    if time_since_booking.total_seconds() <= 1800:  # 30 minutes
+                        booking = b
+                        print(f"✓ Found most recent booking for provider: {booking.id} (created {time_since_booking.total_seconds():.0f}s ago)")
+                        break
+                    else:
+                        print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
+        
+        if not booking:
+            print(f"No recent pending booking found for provider: {from_number}")
             return jsonify({"status": "ok"}), 200
         
         # Get provider info
@@ -826,7 +811,7 @@ def sms_webhook():
             
             print(f"Booking {booking.id} rejected successfully")
         else:
-            print(f"Invalid response: '{text}'. Expected Y{booking_id} or N{booking_id}")
+            print(f"Unexpected response type: '{response_type}'. This should not happen.")
         
         # ALWAYS return 200 OK to prevent webhook deletion
         return jsonify({"status": "ok"}), 200
@@ -1114,10 +1099,10 @@ def debug_webhook():
             "booking_id": booking.id,
             "provider_message": provider_message,
             "customer_message": customer_message,
-            "new_response_format": {
-                "accept": f"Y{booking.id}",
-                "decline": f"N{booking.id}",
-                "note": "Providers should now reply with booking ID included"
+            "response_format": {
+                "accept": "Y",
+                "decline": "N",
+                "note": "Simple Y/N responses - uses timestamp-based matching"
             },
             "debug_info": {
                 "booking_status": booking.status,
