@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from models import db, Booking, Provider
 from datetime import datetime, timedelta
 import pytz
+import openai
 
 # Load environment variables
 load_dotenv()
@@ -80,6 +81,14 @@ TEXTMAGIC_FROM_NUMBER = os.getenv('TEXTMAGIC_FROM_NUMBER')
 # TextMagic API endpoint
 TEXTMAGIC_API_URL = 'https://rest.textmagic.com/api/v2/messages'
 
+# OpenAI configuration
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    print("OpenAI API configured")
+else:
+    print("Warning: OPENAI_API_KEY not set - AI customer support disabled")
+
 # Load provider data
 PROVIDERS_FILE = Path(__file__).parent / 'providers.json'
 TEST_PROVIDER_ID = 'test_provider'
@@ -135,6 +144,58 @@ def format_appointment_time_et(appointment_time):
     
     appointment_time_et = appointment_time_utc.astimezone(et)
     return appointment_time_et.strftime('%A, %B %d at %I:%M %p ET')
+
+def get_ai_customer_support_response(customer_message, customer_phone=None):
+    """Generate AI customer support response using OpenAI"""
+    if not OPENAI_API_KEY:
+        return None
+    
+    try:
+        # Create a comprehensive knowledge base for the AI
+        system_prompt = """You are a helpful customer support agent for Gold Touch Mobile Massage, a professional massage service. 
+
+IMPORTANT BUSINESS INFORMATION:
+- Payment: We accept Zelle payments to goldtouchmobile@gmail.com
+- Service Areas: South Florida (Miami-Dade, Broward, Palm Beach counties)
+- Services: Mobile massage (we come to you) and In-Studio massage
+- Pricing: Typically $120-200 depending on duration and type
+- Booking: Customers book through goldtouchmobile.com
+- Response Time: Providers have 15 minutes to respond to booking requests
+
+COMMON QUESTIONS & ANSWERS:
+- Zelle payment: Send to goldtouchmobile@gmail.com
+- Cancellation: Contact us ASAP, preferably 2+ hours before appointment
+- Rescheduling: Text us and we'll help find a new time
+- Provider didn't show: We'll immediately find a replacement and may offer compensation
+- Service quality issues: We take this seriously and will make it right
+- Booking changes: We can modify time, location, or service type if provider agrees
+- Tipping: Optional but appreciated, typically 15-20%
+- What to prepare: Clean towels, comfortable space, parking for provider
+
+TONE: Be friendly, professional, and helpful. Keep responses concise (under 160 characters when possible for SMS). Always try to resolve issues or direct them to contact goldtouchmobile@gmail.com for complex matters.
+
+If you cannot answer a question, direct them to email goldtouchmobile@gmail.com or call our support line."""
+
+        # Use the newer OpenAI client format
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Customer message: {customer_message}"}
+            ],
+            max_tokens=150,
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message.content.strip()
+        print(f"AI generated response for '{customer_message}': {ai_response}")
+        return ai_response
+        
+    except Exception as e:
+        print(f"Error generating AI response: {str(e)}")
+        return None
 
 def send_sms(to_number, message, from_number=None):
     """Send SMS using TextMagic API"""
@@ -703,40 +764,67 @@ def sms_webhook():
             print("Missing text or from_number")
             return jsonify({"status": "ok"}), 200
         
-        # Determine response type from simple Y/N
+        # Check if this is a provider Y/N response or a customer support message
         response_type = None
+        is_provider_response = False
+        
         if text.lower() in ['y', 'yes']:
             response_type = 'y'
+            is_provider_response = True
         elif text.lower() in ['n', 'no']:
             response_type = 'n'
+            is_provider_response = True
         else:
-            print(f"Invalid response: '{text}'. Expected Y or N")
-            return jsonify({"status": "ok"}), 200
+            # This might be a customer support message, not a provider response
+            print(f"Message '{text}' is not a Y/N response - checking if it's a customer support request")
+            is_provider_response = False
         
-        # Find the most recent pending booking for this provider (timestamp-based)
-        # Normalize phone numbers for comparison
-        provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
-        
-        # Get all pending bookings for this provider, ordered by most recent first
-        all_pending = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).all()
-        
-        booking = None
-        for b in all_pending:
-            if hasattr(b, 'provider_phone') and b.provider_phone:
-                booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
-                
-                if booking_phone_normalized == provider_phone_normalized:
-                    # Add safety check: only process responses within 30 minutes of booking creation
-                    time_since_booking = datetime.utcnow() - b.created_at
-                    if time_since_booking.total_seconds() <= 1800:  # 30 minutes
-                        booking = b
-                        print(f"✓ Found most recent booking for provider: {booking.id} (created {time_since_booking.total_seconds():.0f}s ago)")
-                        break
-                    else:
-                        print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
-        
-        if not booking:
-            print(f"No recent pending booking found for provider: {from_number}")
+        if is_provider_response:
+            # Handle provider Y/N responses
+            # Find the most recent pending booking for this provider (timestamp-based)
+            # Normalize phone numbers for comparison
+            provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+            
+            # Get all pending bookings for this provider, ordered by most recent first
+            all_pending = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).all()
+            
+            booking = None
+            for b in all_pending:
+                if hasattr(b, 'provider_phone') and b.provider_phone:
+                    booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
+                    
+                    if booking_phone_normalized == provider_phone_normalized:
+                        # Add safety check: only process responses within 30 minutes of booking creation
+                        time_since_booking = datetime.utcnow() - b.created_at
+                        if time_since_booking.total_seconds() <= 1800:  # 30 minutes
+                            booking = b
+                            print(f"✓ Found most recent booking for provider: {booking.id} (created {time_since_booking.total_seconds():.0f}s ago)")
+                            break
+                        else:
+                            print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
+            
+            if not booking:
+                print(f"No recent pending booking found for provider: {from_number}")
+                return jsonify({"status": "ok"}), 200
+        else:
+            # Handle customer support messages with AI
+            print(f"Processing customer support message from {from_number}: '{text}'")
+            
+            # Generate AI response
+            ai_response = get_ai_customer_support_response(text, from_number)
+            
+            if ai_response:
+                print(f"Sending AI response: {ai_response}")
+                success, result = send_sms(from_number, ai_response)
+                if success:
+                    print(f"✓ AI customer support response sent successfully")
+                else:
+                    print(f"✗ Failed to send AI response: {result}")
+            else:
+                print("AI response generation failed, sending fallback message")
+                fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile@gmail.com or visit goldtouchmobile.com"
+                send_sms(from_number, fallback_message)
+            
             return jsonify({"status": "ok"}), 200
         
         # Get provider info
@@ -1563,6 +1651,71 @@ def test_db():
             'message': str(e),
             'type': type(e).__name__,
             'database_url': os.getenv('DATABASE_URL', 'sqlite:///bookings.db')
+        }), 500
+
+@app.route('/test-ai-support', methods=['GET', 'POST'])
+def test_ai_support():
+    """Test endpoint for AI customer support"""
+    try:
+        if request.method == 'GET':
+            # Show test form
+            return """
+            <html>
+            <head><title>Test AI Customer Support</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>🤖 Test AI Customer Support</h2>
+                <form method="POST">
+                    <p>
+                        <label>Customer Message:</label><br>
+                        <textarea name="message" placeholder="What's your Zelle info?" rows="3" cols="50" required></textarea>
+                    </p>
+                    <p>
+                        <label>Customer Phone (optional):</label><br>
+                        <input type="text" name="phone" placeholder="+1234567890">
+                    </p>
+                    <p>
+                        <button type="submit">Get AI Response</button>
+                    </p>
+                </form>
+                
+                <h3>Common Test Messages:</h3>
+                <ul>
+                    <li>"What's your Zelle info?"</li>
+                    <li>"How do I cancel my appointment?"</li>
+                    <li>"My provider didn't show up"</li>
+                    <li>"What should I prepare for the massage?"</li>
+                    <li>"How much should I tip?"</li>
+                </ul>
+            </body>
+            </html>
+            """
+        
+        # Handle POST request
+        message = request.form.get('message', '').strip()
+        phone = request.form.get('phone', '').strip()
+        
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Generate AI response
+        ai_response = get_ai_customer_support_response(message, phone)
+        
+        return jsonify({
+            "status": "success",
+            "customer_message": message,
+            "ai_response": ai_response,
+            "openai_configured": bool(OPENAI_API_KEY),
+            "test_info": {
+                "note": "This tests the AI response generation without sending SMS",
+                "to_send_sms": "Use the actual webhook or customer phone number"
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "type": type(e).__name__
         }), 500
 
 @app.route('/routes', methods=['GET'])
