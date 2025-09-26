@@ -1234,6 +1234,61 @@ def migrate_providers():
             "type": type(e).__name__
         }), 500
 
+@app.route('/migrate-add-ons', methods=['GET'])
+def migrate_add_ons():
+    """Manual endpoint to add add_ons column to bookings table"""
+    try:
+        from sqlalchemy import text
+        
+        # Check if add_ons column already exists
+        check_query = text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'bookings' AND column_name = 'add_ons';
+        """)
+        
+        result = db.session.execute(check_query)
+        existing_column = result.fetchone()
+        
+        if existing_column:
+            return jsonify({
+                "status": "success",
+                "message": "add_ons column already exists in bookings table",
+                "action": "none"
+            })
+        
+        # Add the add_ons column
+        alter_query = text("""
+            ALTER TABLE bookings 
+            ADD COLUMN add_ons TEXT;
+        """)
+        
+        db.session.execute(alter_query)
+        db.session.commit()
+        
+        # Verify the column was added
+        verify_result = db.session.execute(check_query)
+        if verify_result.fetchone():
+            return jsonify({
+                "status": "success",
+                "message": "Successfully added add_ons column to bookings table",
+                "action": "column_added"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Migration verification failed",
+                "action": "verification_failed"
+            }), 500
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "status": "error",
+            "message": f"Migration failed: {str(e)}",
+            "type": type(e).__name__
+        }), 500
+
 @app.route('/debug-providers', methods=['GET'])
 def debug_providers():
     """Debug endpoint to check provider status"""
