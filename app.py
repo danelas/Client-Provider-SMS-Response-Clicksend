@@ -157,7 +157,7 @@ def get_ai_support_response(message, phone=None, is_provider=False):
 
 PROVIDER INFORMATION:
 - Payment Options: Providers can receive payment directly from customers (cash or customer's Zelle) OR through the platform
-- Business Zelle: goldtouchmobile.com (share this with customers if they ask)
+- Business Zelle: goldtouchmassage1@gmail.com (share this with customers if they ask)
 - Booking Process: You receive SMS requests, reply Y to accept or N to decline
 - Response Time: You have 15 minutes to respond to booking requests
 - Earnings: Keep 70-80% of service fee (varies by service type)
@@ -165,8 +165,8 @@ PROVIDER INFORMATION:
 - Platform: Manage bookings through goldtouchmobile.com
 
 PROVIDER COMMON QUESTIONS & ANSWERS:
-- Payment methods: You can accept cash directly or have customers Zelle you, OR customers can pay the business Zelle at goldtouchmobile.com
-- Business Zelle info: goldtouchmobile.com (give this to customers if they ask for payment info)
+- Payment methods: You can accept cash directly or have customers Zelle you, OR customers can pay the business Zelle at goldtouchmassage1@gmail.com
+- Business Zelle info: goldtouchmassage1@gmail.com (give this to customers if they ask for payment info)
 - Payment timing: Support is usually available immediately - no 24-hour wait policy
 - Cancellations: If customer cancels <2 hours before, you may receive partial payment
 - No-shows: Report immediately, you'll receive compensation
@@ -184,7 +184,7 @@ If you cannot answer a provider question, direct them to email goldtouchmobile.c
             system_prompt = """You are a helpful customer support agent for Gold Touch Mobile Massage, a professional massage service. 
 
 CUSTOMER INFORMATION:
-- Payment: We accept Zelle payments to goldtouchmobile.com
+- Payment: We accept Zelle payments to goldtouchmassage1@gmail.com
 - Service Areas: South Florida (Miami-Dade, Broward, Palm Beach counties)
 - Services: Mobile massage (we come to you) and In-Studio massage
 - Pricing: Typically $120-200 depending on duration and type
@@ -192,7 +192,7 @@ CUSTOMER INFORMATION:
 - Response Time: Providers have 15 minutes to respond to booking requests
 
 CUSTOMER COMMON QUESTIONS & ANSWERS:
-- Zelle payment: Send to goldtouchmobile.com
+- Zelle payment: Send to goldtouchmassage1@gmail.com
 - Cancellation: Contact us ASAP, preferably 2+ hours before appointment
 - Rescheduling: Text us and we'll help find a new time
 - Provider didn't show: We'll immediately find a replacement and may offer compensation
