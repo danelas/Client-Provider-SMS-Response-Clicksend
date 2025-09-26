@@ -145,25 +145,52 @@ def format_appointment_time_et(appointment_time):
     appointment_time_et = appointment_time_utc.astimezone(et)
     return appointment_time_et.strftime('%A, %B %d at %I:%M %p ET')
 
-def get_ai_customer_support_response(customer_message, customer_phone=None):
-    """Generate AI customer support response using OpenAI"""
+def get_ai_support_response(message, phone=None, is_provider=False):
+    """Generate AI support response for both customers and providers using OpenAI"""
     if not OPENAI_API_KEY:
         return None
     
     try:
-        # Create a comprehensive knowledge base for the AI
-        system_prompt = """You are a helpful customer support agent for Gold Touch Mobile Massage, a professional massage service. 
+        if is_provider:
+            # Provider-specific knowledge base
+            system_prompt = """You are a helpful support agent for Gold Touch Mobile Massage providers. You assist massage therapists who work with our platform.
 
-IMPORTANT BUSINESS INFORMATION:
-- Payment: We accept Zelle payments to goldtouchmobile@gmail.com
+PROVIDER INFORMATION:
+- Payment: Providers receive payment via Zelle to goldtouchmobile.com
+- Booking Process: You receive SMS requests, reply Y to accept or N to decline
+- Response Time: You have 15 minutes to respond to booking requests
+- Earnings: Keep 70-80% of service fee (varies by service type)
+- Service Areas: South Florida (Miami-Dade, Broward, Palm Beach counties)
+- Platform: Manage bookings through goldtouchmobile.com
+
+PROVIDER COMMON QUESTIONS & ANSWERS:
+- Payment schedule: Payments sent within 24 hours after service completion
+- Zelle payments: Sent to goldtouchmobile.com
+- Cancellations: If customer cancels <2 hours before, you may receive partial payment
+- No-shows: Report immediately, you'll receive full payment
+- Service issues: Contact support immediately at goldtouchmobile.com
+- Schedule changes: Reply to booking SMS or contact support
+- New bookings: Check your phone for SMS requests regularly
+- Earnings questions: Contact goldtouchmobile.com for payment details
+- Technical issues: Email goldtouchmobile.com for platform support
+
+TONE: Be supportive and professional. Providers are your partners. Keep responses concise for SMS. Always direct complex issues to goldtouchmobile.com.
+
+If you cannot answer a provider question, direct them to email goldtouchmobile.com for support."""
+        else:
+            # Customer-specific knowledge base
+            system_prompt = """You are a helpful customer support agent for Gold Touch Mobile Massage, a professional massage service. 
+
+CUSTOMER INFORMATION:
+- Payment: We accept Zelle payments to goldtouchmobile.com
 - Service Areas: South Florida (Miami-Dade, Broward, Palm Beach counties)
 - Services: Mobile massage (we come to you) and In-Studio massage
 - Pricing: Typically $120-200 depending on duration and type
 - Booking: Customers book through goldtouchmobile.com
 - Response Time: Providers have 15 minutes to respond to booking requests
 
-COMMON QUESTIONS & ANSWERS:
-- Zelle payment: Send to goldtouchmobile@gmail.com
+CUSTOMER COMMON QUESTIONS & ANSWERS:
+- Zelle payment: Send to goldtouchmobile.com
 - Cancellation: Contact us ASAP, preferably 2+ hours before appointment
 - Rescheduling: Text us and we'll help find a new time
 - Provider didn't show: We'll immediately find a replacement and may offer compensation
@@ -171,10 +198,11 @@ COMMON QUESTIONS & ANSWERS:
 - Booking changes: We can modify time, location, or service type if provider agrees
 - Tipping: Optional but appreciated, typically 15-20%
 - What to prepare: Clean towels, comfortable space, parking for provider
+- Booking confirmation: You'll receive SMS confirmation when provider accepts
 
-TONE: Be friendly, professional, and helpful. Keep responses concise (under 160 characters when possible for SMS). Always try to resolve issues or direct them to contact goldtouchmobile@gmail.com for complex matters.
+TONE: Be friendly, professional, and helpful. Keep responses concise (under 160 characters when possible for SMS). Always try to resolve issues or direct them to contact goldtouchmobile.com for complex matters.
 
-If you cannot answer a question, direct them to email goldtouchmobile@gmail.com or call our support line."""
+If you cannot answer a question, direct them to email goldtouchmobile.com or call our support line."""
 
         # Use the newer OpenAI client format
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -183,14 +211,15 @@ If you cannot answer a question, direct them to email goldtouchmobile@gmail.com 
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Customer message: {customer_message}"}
+                {"role": "user", "content": f"Message: {message}"}
             ],
             max_tokens=150,
             temperature=0.7
         )
         
         ai_response = response.choices[0].message.content.strip()
-        print(f"AI generated response for '{customer_message}': {ai_response}")
+        user_type = "provider" if is_provider else "customer"
+        print(f"AI generated {user_type} response for '{message}': {ai_response}")
         return ai_response
         
     except Exception as e:
@@ -804,25 +833,73 @@ def sms_webhook():
                             print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
             
             if not booking:
-                print(f"No recent pending booking found for provider: {from_number}")
+                # No pending booking found, but this might be a provider asking a question
+                # Check if this phone number belongs to a known provider
+                is_known_provider = False
+                provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+                
+                # Check if this phone matches any provider in database
+                all_providers = Provider.query.all()
+                for provider in all_providers:
+                    if provider.phone:
+                        provider_db_normalized = clean_phone_number(provider.phone).replace('+', '').replace('-', '').replace(' ', '')
+                        if provider_db_normalized == provider_phone_normalized:
+                            is_known_provider = True
+                            print(f"✓ Recognized provider {provider.name} asking a question (not Y/N response)")
+                            break
+                
+                if is_known_provider:
+                    # Handle provider question with AI
+                    print(f"Processing provider support message from {from_number}: '{text}'")
+                    ai_response = get_ai_support_response(text, from_number, is_provider=True)
+                    
+                    if ai_response:
+                        print(f"Sending AI provider response: {ai_response}")
+                        success, result = send_sms(from_number, ai_response)
+                        if success:
+                            print(f"✓ AI provider support response sent successfully")
+                        else:
+                            print(f"✗ Failed to send AI provider response: {result}")
+                    else:
+                        print("AI provider response generation failed, sending fallback message")
+                        fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For provider support, please email goldtouchmobile.com"
+                        send_sms(from_number, fallback_message)
+                else:
+                    print(f"No recent pending booking found for provider: {from_number}")
+                
                 return jsonify({"status": "ok"}), 200
         else:
-            # Handle customer support messages with AI
-            print(f"Processing customer support message from {from_number}: '{text}'")
+            # Handle customer or unknown user support messages with AI
+            # First check if this is a known provider asking a non-Y/N question
+            is_known_provider = False
+            provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+            
+            # Check if this phone matches any provider in database
+            all_providers = Provider.query.all()
+            for provider in all_providers:
+                if provider.phone:
+                    provider_db_normalized = clean_phone_number(provider.phone).replace('+', '').replace('-', '').replace(' ', '')
+                    if provider_db_normalized == provider_phone_normalized:
+                        is_known_provider = True
+                        print(f"✓ Recognized provider {provider.name} asking a question: '{text}'")
+                        break
+            
+            user_type = "provider" if is_known_provider else "customer"
+            print(f"Processing {user_type} support message from {from_number}: '{text}'")
             
             # Generate AI response
-            ai_response = get_ai_customer_support_response(text, from_number)
+            ai_response = get_ai_support_response(text, from_number, is_provider=is_known_provider)
             
             if ai_response:
-                print(f"Sending AI response: {ai_response}")
+                print(f"Sending AI {user_type} response: {ai_response}")
                 success, result = send_sms(from_number, ai_response)
                 if success:
-                    print(f"✓ AI customer support response sent successfully")
+                    print(f"✓ AI {user_type} support response sent successfully")
                 else:
-                    print(f"✗ Failed to send AI response: {result}")
+                    print(f"✗ Failed to send AI {user_type} response: {result}")
             else:
                 print("AI response generation failed, sending fallback message")
-                fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile@gmail.com or visit goldtouchmobile.com"
+                fallback_message = f"Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile.com"
                 send_sms(from_number, fallback_message)
             
             return jsonify({"status": "ok"}), 200
@@ -1655,37 +1732,56 @@ def test_db():
 
 @app.route('/test-ai-support', methods=['GET', 'POST'])
 def test_ai_support():
-    """Test endpoint for AI customer support"""
+    """Test endpoint for AI customer and provider support"""
     try:
         if request.method == 'GET':
             # Show test form
             return """
             <html>
-            <head><title>Test AI Customer Support</title></head>
+            <head><title>Test AI Support System</title></head>
             <body style="font-family: Arial; padding: 20px;">
-                <h2>🤖 Test AI Customer Support</h2>
+                <h2>🤖 Test AI Support System</h2>
                 <form method="POST">
                     <p>
-                        <label>Customer Message:</label><br>
+                        <label>Message:</label><br>
                         <textarea name="message" placeholder="What's your Zelle info?" rows="3" cols="50" required></textarea>
                     </p>
                     <p>
-                        <label>Customer Phone (optional):</label><br>
+                        <label>Phone (optional):</label><br>
                         <input type="text" name="phone" placeholder="+1234567890">
+                    </p>
+                    <p>
+                        <label>User Type:</label><br>
+                        <input type="radio" name="user_type" value="customer" checked> Customer<br>
+                        <input type="radio" name="user_type" value="provider"> Provider
                     </p>
                     <p>
                         <button type="submit">Get AI Response</button>
                     </p>
                 </form>
                 
-                <h3>Common Test Messages:</h3>
-                <ul>
-                    <li>"What's your Zelle info?"</li>
-                    <li>"How do I cancel my appointment?"</li>
-                    <li>"My provider didn't show up"</li>
-                    <li>"What should I prepare for the massage?"</li>
-                    <li>"How much should I tip?"</li>
-                </ul>
+                <div style="display: flex; gap: 30px;">
+                    <div>
+                        <h3>Customer Test Messages:</h3>
+                        <ul>
+                            <li>"What's your Zelle info?"</li>
+                            <li>"How do I cancel my appointment?"</li>
+                            <li>"My provider didn't show up"</li>
+                            <li>"What should I prepare for the massage?"</li>
+                            <li>"How much should I tip?"</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Provider Test Messages:</h3>
+                        <ul>
+                            <li>"When do I get paid?"</li>
+                            <li>"How much do I earn per booking?"</li>
+                            <li>"Customer didn't show up, what now?"</li>
+                            <li>"How do I change my availability?"</li>
+                            <li>"Where do I send my Zelle info?"</li>
+                        </ul>
+                    </div>
+                </div>
             </body>
             </html>
             """
@@ -1693,21 +1789,24 @@ def test_ai_support():
         # Handle POST request
         message = request.form.get('message', '').strip()
         phone = request.form.get('phone', '').strip()
+        user_type = request.form.get('user_type', 'customer')
+        is_provider = (user_type == 'provider')
         
         if not message:
             return jsonify({"error": "Message is required"}), 400
         
         # Generate AI response
-        ai_response = get_ai_customer_support_response(message, phone)
+        ai_response = get_ai_support_response(message, phone, is_provider=is_provider)
         
         return jsonify({
             "status": "success",
-            "customer_message": message,
+            "user_type": user_type,
+            "message": message,
             "ai_response": ai_response,
             "openai_configured": bool(OPENAI_API_KEY),
             "test_info": {
                 "note": "This tests the AI response generation without sending SMS",
-                "to_send_sms": "Use the actual webhook or customer phone number"
+                "to_send_sms": "Use the actual webhook or phone number"
             }
         })
         
