@@ -206,10 +206,9 @@ TONE: Be friendly, professional, and helpful. Keep responses concise (under 160 
 
 If you cannot answer a question, direct them to email goldtouchmobile.com or call our support line."""
 
-        # Use the newer OpenAI client format
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        
-        response = client.chat.completions.create(
+        # Use OpenAI legacy format (compatible with 0.28.1)
+        openai.api_key = OPENAI_API_KEY
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
