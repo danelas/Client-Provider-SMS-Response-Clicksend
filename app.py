@@ -24,12 +24,17 @@ if database_url and database_url.startswith('postgres://'):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///bookings.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Add SSL configuration for PostgreSQL
+# Add SSL configuration for PostgreSQL with fallback options
 if database_url and 'postgresql://' in database_url:
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'connect_args': {
-            'sslmode': 'require'
-        }
+            'sslmode': 'prefer',  # Changed from 'require' to 'prefer'
+            'sslcert': None,
+            'sslkey': None,
+            'sslrootcert': None
+        },
+        'pool_pre_ping': True,  # Test connections before use
+        'pool_recycle': 300     # Recycle connections every 5 minutes
     }
 
 print(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI'][:20]}...")
@@ -401,16 +406,30 @@ def create_booking():
             print(f"{key}: {value} (type: {type(value)})")
         print("===================\n")
         
-        # Check database connection
-        try:
-            with app.app_context():
-                from sqlalchemy import text
-                db.session.execute(text('SELECT 1'))
-                print("Database connection successful")
-        except Exception as e:
-            error_msg = f"Database connection error: {str(e)}"
-            print(f"DATABASE ERROR: {error_msg}")
-            return jsonify({"status": "error", "message": "Database connection error"}), 500
+        # Check database connection with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with app.app_context():
+                    from sqlalchemy import text
+                    db.session.execute(text('SELECT 1'))
+                    print("Database connection successful")
+                    break
+            except Exception as e:
+                error_msg = f"Database connection error (attempt {attempt + 1}/{max_retries}): {str(e)}"
+                print(f"DATABASE ERROR: {error_msg}")
+                
+                if attempt == max_retries - 1:
+                    # Last attempt failed, return error
+                    return jsonify({
+                        "status": "error", 
+                        "message": "Database connection failed after multiple attempts",
+                        "details": str(e)
+                    }), 500
+                else:
+                    # Wait before retry
+                    import time
+                    time.sleep(1)
         
         # Validate required fields
         required_fields = ['customer_phone', 'provider_id', 'service_type', 'datetime']
