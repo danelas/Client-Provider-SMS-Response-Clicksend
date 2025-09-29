@@ -853,40 +853,8 @@ def sms_webhook():
                             print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
             
             if not booking:
-                # No pending booking found, but this might be a provider asking a question
-                # Check if this phone number belongs to a known provider
-                is_known_provider = False
-                provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
-                
-                # Check if this phone matches any provider in database
-                all_providers = Provider.query.all()
-                for provider in all_providers:
-                    if provider.phone:
-                        provider_db_normalized = clean_phone_number(provider.phone).replace('+', '').replace('-', '').replace(' ', '')
-                        if provider_db_normalized == provider_phone_normalized:
-                            is_known_provider = True
-                            print(f"✓ Recognized provider {provider.name} asking a question (not Y/N response)")
-                            break
-                
-                if is_known_provider:
-                    # Handle provider question with AI
-                    print(f"Processing provider support message from {from_number}: '{text}'")
-                    ai_response = get_ai_support_response(text, from_number, is_provider=True)
-                    
-                    if ai_response:
-                        print(f"Sending AI provider response: {ai_response}")
-                        success, result = send_sms(from_number, ai_response)
-                        if success:
-                            print(f"✓ AI provider support response sent successfully")
-                        else:
-                            print(f"✗ Failed to send AI provider response: {result}")
-                    else:
-                        print("AI provider response generation failed, sending fallback message")
-                        fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For provider support, please email goldtouchmobile.com"
-                        send_sms(from_number, fallback_message)
-                else:
-                    print(f"No recent pending booking found for provider: {from_number}")
-                
+                # No pending booking found for Y/N response - ignore silently
+                print(f"⚠️ Provider sent '{text}' but no recent pending booking found for {from_number} - ignoring Y/N response")
                 return jsonify({"status": "ok"}), 200
         else:
             # Handle customer or unknown user support messages with AI
