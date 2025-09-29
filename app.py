@@ -5,7 +5,7 @@ import json
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
-from models import db, Booking, Provider
+from models import db, Booking, Provider, MessageLog
 from datetime import datetime, timedelta
 import pytz
 import openai
@@ -885,23 +885,89 @@ def sms_webhook():
                         print(f"✓ Recognized provider {provider.name} asking a question: '{text}'")
                         break
             
-            user_type = "provider" if is_known_provider else "customer"
-            print(f"Processing {user_type} support message from {from_number}: '{text}'")
-            
-            # Generate AI response
-            ai_response = get_ai_support_response(text, from_number, is_provider=is_known_provider)
-            
-            if ai_response:
-                print(f"Sending AI {user_type} response: {ai_response}")
-                success, result = send_sms(from_number, ai_response)
-                if success:
-                    print(f"✓ AI {user_type} support response sent successfully")
+            if is_known_provider:
+                # Handle provider questions with AI (always respond to providers)
+                user_type = "provider"
+                print(f"Processing {user_type} support message from {from_number}: '{text}'")
+                
+                # Generate AI response for provider
+                ai_response = get_ai_support_response(text, from_number, is_provider=True)
+                
+                if ai_response:
+                    print(f"Sending AI {user_type} response: {ai_response}")
+                    success, result = send_sms(from_number, ai_response)
+                    if success:
+                        print(f"✓ AI {user_type} support response sent successfully")
+                    else:
+                        print(f"✗ Failed to send AI {user_type} response: {result}")
                 else:
-                    print(f"✗ Failed to send AI {user_type} response: {result}")
+                    print("AI response generation failed, sending fallback message")
+                    fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For provider support, please email goldtouchmobile.com"
+                    send_sms(from_number, fallback_message)
             else:
-                print("AI response generation failed, sending fallback message")
-                fallback_message = f"Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile.com"
-                send_sms(from_number, fallback_message)
+                # Check if this is a verified customer (has made a booking)
+                customer_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+                
+                # Look for any booking with this customer phone number
+                is_verified_customer = False
+                customer_bookings = Booking.query.all()
+                for booking in customer_bookings:
+                    if booking.customer_phone:
+                        booking_phone_normalized = clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', '')
+                        if booking_phone_normalized == customer_phone_normalized:
+                            is_verified_customer = True
+                            print(f"✓ Recognized verified customer from booking {booking.id}: '{text}'")
+                            break
+                
+                if is_verified_customer:
+                    # Handle verified customer questions with AI
+                    user_type = "customer"
+                    print(f"Processing {user_type} support message from {from_number}: '{text}'")
+                    
+                    # Generate AI response for customer
+                    ai_response = get_ai_support_response(text, from_number, is_provider=False)
+                    
+                    if ai_response:
+                        print(f"Sending AI {user_type} response: {ai_response}")
+                        success, result = send_sms(from_number, ai_response)
+                        if success:
+                            print(f"✓ AI {user_type} support response sent successfully")
+                        else:
+                            print(f"✗ Failed to send AI {user_type} response: {result}")
+                    else:
+                        print("AI response generation failed, sending fallback message")
+                        fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile.com"
+                        send_sms(from_number, fallback_message)
+                else:
+                    # Unknown/unverified number - check if we've already sent basic redirect
+                    normalized_phone = clean_phone_number(from_number).replace('+', '').replace('-', '').replace(' ', '')
+                    
+                    # Check if we've already sent a basic redirect to this number
+                    existing_redirect = MessageLog.query.filter_by(
+                        phone_number=normalized_phone, 
+                        message_type='basic_redirect'
+                    ).first()
+                    
+                    if existing_redirect:
+                        print(f"⚠️ Unknown number {from_number} already received basic redirect on {existing_redirect.created_at} - ignoring: '{text}'")
+                    else:
+                        # Send basic booking redirect message (first time only)
+                        print(f"⚠️ Unknown number {from_number} - sending first-time basic booking redirect: '{text}'")
+                        basic_message = "Hi! Please visit goldtouchmobile.com/providers to book your massage appointment."
+                        
+                        success, result = send_sms(from_number, basic_message)
+                        if success:
+                            # Log that we sent the basic redirect
+                            message_log = MessageLog(
+                                phone_number=normalized_phone,
+                                message_type='basic_redirect',
+                                message_content=basic_message
+                            )
+                            db.session.add(message_log)
+                            db.session.commit()
+                            print(f"✓ Basic booking redirect sent to unknown number and logged")
+                        else:
+                            print(f"✗ Failed to send basic redirect: {result}")
             
             return jsonify({"status": "ok"}), 200
         
@@ -1306,12 +1372,10 @@ def check_expired_bookings():
                     booking.updated_at = datetime.utcnow()
                     db.session.commit()
                     
-                    # Notify customer
+                    # Notify customer with same message as rejection
                     alt_message = (
-                        f"We're sorry, but the provider hasn't responded to your booking request. "
-                        f"We're working to find you an alternative provider. "
-                        f"You can also book with another provider here: goldtouchmobile.com/providers.\n\n"
-                        "We apologize for any inconvenience and hope to serve you soon!"
+                        "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
+                        "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
                     )
                     success, msg = send_sms(booking.customer_phone, alt_message)
                     if not success:
@@ -1343,13 +1407,9 @@ def start_background_tasks():
     return scheduler
 
 # Start background tasks for production (after function is defined)
-# TEMPORARILY DISABLED to prevent multiple SMS to old bookings
-# Will re-enable after fixing the expired bookings logic
 try:
-    # scheduler = start_background_tasks()
-    # print("Background tasks started successfully")
-    print("Background tasks DISABLED temporarily to prevent multiple SMS")
-    scheduler = None
+    scheduler = start_background_tasks()
+    print("Background tasks started successfully - checking for expired bookings every minute")
 except Exception as e:
     print(f"Warning: Could not start background tasks: {e}")
     scheduler = None

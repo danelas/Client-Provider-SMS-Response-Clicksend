@@ -60,3 +60,16 @@ class Booking(db.Model):
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
         }
+
+class MessageLog(db.Model):
+    """Tracks messages sent to phone numbers to prevent spam"""
+    __tablename__ = 'message_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    phone_number = db.Column(db.String(20), nullable=False, index=True)
+    message_type = db.Column(db.String(50), nullable=False)  # 'basic_redirect', 'ai_response', etc.
+    message_content = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<MessageLog {self.id}: {self.phone_number} - {self.message_type}>"
