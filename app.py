@@ -926,17 +926,32 @@ def sms_webhook():
             else:
                 # Check if this is a verified customer (has made a booking)
                 customer_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+                print(f"🔍 Checking if {from_number} (normalized: {customer_phone_normalized}) is a verified customer")
                 
-                # Look for any booking with this customer phone number
+                # Look for any booking with this customer phone number (more efficient query)
                 is_verified_customer = False
-                customer_bookings = Booking.query.all()
-                for booking in customer_bookings:
-                    if booking.customer_phone:
-                        booking_phone_normalized = clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', '')
-                        if booking_phone_normalized == customer_phone_normalized:
-                            is_verified_customer = True
-                            print(f"✓ Recognized verified customer from booking {booking.id}: '{text}'")
-                            break
+                try:
+                    # Get all bookings for debugging
+                    all_bookings = Booking.query.all()
+                    print(f"📊 Total bookings in database: {len(all_bookings)}")
+                    
+                    for booking in all_bookings:
+                        if booking.customer_phone:
+                            booking_phone_normalized = clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', '')
+                            print(f"📞 Comparing {customer_phone_normalized} with booking {booking.id} phone: {booking_phone_normalized}")
+                            if booking_phone_normalized == customer_phone_normalized:
+                                is_verified_customer = True
+                                print(f"✅ MATCH! Recognized verified customer from booking {booking.id}: '{text}'")
+                                break
+                        else:
+                            print(f"⚠️ Booking {booking.id} has no customer_phone")
+                    
+                    if not is_verified_customer:
+                        print(f"❌ No matching booking found for {customer_phone_normalized}")
+                        
+                except Exception as e:
+                    print(f"🚨 Error checking customer verification: {str(e)}")
+                    is_verified_customer = False
                 
                 if is_verified_customer:
                     # Handle verified customer questions with AI
@@ -1078,6 +1093,39 @@ def sms_webhook():
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
+
+@app.route('/check-customer/<phone>', methods=['GET'])
+def check_customer_status(phone):
+    """Check if a phone number is recognized as a verified customer"""
+    try:
+        # Normalize the phone number
+        normalized_phone = clean_phone_number(phone).replace('+', '').replace('-', '').replace(' ', '')
+        
+        # Get all bookings
+        all_bookings = Booking.query.all()
+        matching_bookings = []
+        
+        for booking in all_bookings:
+            if booking.customer_phone:
+                booking_phone_normalized = clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', '')
+                if booking_phone_normalized == normalized_phone:
+                    matching_bookings.append({
+                        'booking_id': booking.id,
+                        'customer_phone': booking.customer_phone,
+                        'status': booking.status,
+                        'created_at': booking.created_at.isoformat()
+                    })
+        
+        return jsonify({
+            'phone_input': phone,
+            'normalized_phone': normalized_phone,
+            'is_verified_customer': len(matching_bookings) > 0,
+            'matching_bookings': matching_bookings,
+            'total_bookings_in_db': len(all_bookings)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/providers', methods=['GET'])
 def list_providers():
