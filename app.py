@@ -206,6 +206,7 @@ CUSTOMER COMMON QUESTIONS & ANSWERS:
 - Tipping: Optional but appreciated, typically 15-20%
 - What to prepare: Clean towels, comfortable space, parking for provider
 - Booking confirmation: You'll receive SMS confirmation when provider accepts
+- $15 Discount: YES, we do offer a $15 discount for your next massage when your original provider isn't available. This is our way of thanking you for your flexibility and understanding.
 
 TONE: Be friendly, professional, and helpful. Keep responses concise (under 160 characters when possible for SMS). Always try to resolve issues or direct them to contact goldtouchmobile.com for complex matters.
 
@@ -813,49 +814,70 @@ def sms_webhook():
             print("Missing text or from_number")
             return jsonify({"status": "ok"}), 200
         
+        # First, check if this message is from a provider with a pending booking
+        provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+        
+        # Find the most recent pending booking for this provider
+        all_pending = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).all()
+        
+        provider_booking = None
+        for b in all_pending:
+            if hasattr(b, 'provider_phone') and b.provider_phone:
+                booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
+                
+                if booking_phone_normalized == provider_phone_normalized:
+                    # Add safety check: only process responses within 30 minutes of booking creation
+                    time_since_booking = datetime.utcnow() - b.created_at
+                    if time_since_booking.total_seconds() <= 1800:  # 30 minutes
+                        provider_booking = b
+                        print(f"✓ Found most recent booking for provider: {provider_booking.id} (created {time_since_booking.total_seconds():.0f}s ago)")
+                        break
+                    else:
+                        print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
+        
         # Check if this is a provider Y/N response or a customer support message
         response_type = None
         is_provider_response = False
         
-        if text.lower() in ['y', 'yes']:
-            response_type = 'y'
-            is_provider_response = True
-        elif text.lower() in ['n', 'no']:
-            response_type = 'n'
-            is_provider_response = True
+        if provider_booking:
+            # This is from a provider with a pending booking
+            if not provider_booking.provider_responded:
+                # First response from provider - only accept Y/N
+                if text.lower() in ['y', 'yes']:
+                    response_type = 'y'
+                    is_provider_response = True
+                    print(f"✓ Provider's FIRST response is Y - accepting booking {provider_booking.id}")
+                elif text.lower() in ['n', 'no']:
+                    response_type = 'n'
+                    is_provider_response = True
+                    print(f"✓ Provider's FIRST response is N - rejecting booking {provider_booking.id}")
+                else:
+                    # Provider's first response is not Y/N - mark as responded and treat as support message
+                    provider_booking.provider_responded = True
+                    db.session.commit()
+                    print(f"⚠️ Provider's FIRST response '{text}' is not Y/N - marking booking {provider_booking.id} as responded, treating as support message")
+                    is_provider_response = False
+            else:
+                # Provider already responded - ignore any Y/N and treat as support message
+                print(f"⚠️ Provider already responded to booking {provider_booking.id} - ignoring '{text}' and treating as support message")
+                is_provider_response = False
         else:
-            # This might be a customer support message, not a provider response
-            print(f"Message '{text}' is not a Y/N response - checking if it's a customer support request")
-            is_provider_response = False
+            # Not from a provider with pending booking - check if it's Y/N (should be ignored)
+            if text.lower() in ['y', 'yes', 'n', 'no']:
+                print(f"⚠️ Received '{text}' from {from_number} but no pending booking found - ignoring Y/N response")
+                return jsonify({"status": "ok"}), 200
+            else:
+                # Regular support message
+                print(f"Message '{text}' is not a Y/N response - checking if it's a customer support request")
+                is_provider_response = False
         
         if is_provider_response:
-            # Handle provider Y/N responses
-            # Find the most recent pending booking for this provider (timestamp-based)
-            # Normalize phone numbers for comparison
-            provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
+            # Handle provider Y/N responses - use the booking we already found
+            booking = provider_booking
             
-            # Get all pending bookings for this provider, ordered by most recent first
-            all_pending = Booking.query.filter_by(status='pending').order_by(Booking.created_at.desc()).all()
-            
-            booking = None
-            for b in all_pending:
-                if hasattr(b, 'provider_phone') and b.provider_phone:
-                    booking_phone_normalized = clean_phone_number(b.provider_phone).replace('+', '').replace('-', '').replace(' ', '')
-                    
-                    if booking_phone_normalized == provider_phone_normalized:
-                        # Add safety check: only process responses within 30 minutes of booking creation
-                        time_since_booking = datetime.utcnow() - b.created_at
-                        if time_since_booking.total_seconds() <= 1800:  # 30 minutes
-                            booking = b
-                            print(f"✓ Found most recent booking for provider: {booking.id} (created {time_since_booking.total_seconds():.0f}s ago)")
-                            break
-                        else:
-                            print(f"⚠️ Booking {b.id} is too old ({time_since_booking.total_seconds():.0f}s), skipping")
-            
-            if not booking:
-                # No pending booking found for Y/N response - ignore silently
-                print(f"⚠️ Provider sent '{text}' but no recent pending booking found for {from_number} - ignoring Y/N response")
-                return jsonify({"status": "ok"}), 200
+            # Mark that the provider has now responded
+            booking.provider_responded = True
+            db.session.commit()
         else:
             # Handle customer or unknown user support messages with AI
             # First check if this is a known provider asking a non-Y/N question
@@ -1519,29 +1541,23 @@ def migrate_providers():
         }), 500
 
 @app.route('/migrate-add-ons', methods=['GET'])
-def migrate_add_ons():
-    """Manual endpoint to add add_ons column to bookings table"""
+def migrate_add_ons_endpoint():
+    """Web endpoint to add the add_ons column to bookings table"""
     try:
-        from sqlalchemy import text
+        # Check if the column already exists
+        from sqlalchemy import text, inspect
         
-        # Check if add_ons column already exists
-        check_query = text("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'bookings' AND column_name = 'add_ons';
-        """)
+        inspector = inspect(db.engine)
+        columns = [col['name'] for col in inspector.get_columns('bookings')]
         
-        result = db.session.execute(check_query)
-        existing_column = result.fetchone()
-        
-        if existing_column:
+        if 'add_ons' in columns:
             return jsonify({
                 "status": "success",
-                "message": "add_ons column already exists in bookings table",
-                "action": "none"
+                "message": "add_ons column already exists",
+                "columns": columns
             })
         
-        # Add the add_ons column
+        # Add the column
         alter_query = text("""
             ALTER TABLE bookings 
             ADD COLUMN add_ons TEXT;
@@ -1572,6 +1588,57 @@ def migrate_add_ons():
             "message": f"Migration failed: {str(e)}",
             "type": type(e).__name__
         }), 500
+
+@app.route('/migrate-provider-responded', methods=['GET'])
+def migrate_provider_responded_endpoint():
+    """Web endpoint to add the provider_responded column to bookings table"""
+    try:
+        # Check if the column already exists
+        from sqlalchemy import text, inspect
+        
+        inspector = inspect(db.engine)
+        columns = [col['name'] for col in inspector.get_columns('bookings')]
+        
+        if 'provider_responded' in columns:
+            return jsonify({
+                "status": "success",
+                "message": "provider_responded column already exists",
+                "columns": columns
+            })
+        
+        # Add the column with default value False
+        db.session.execute(text('ALTER TABLE bookings ADD COLUMN provider_responded BOOLEAN DEFAULT FALSE'))
+        
+        # Update existing bookings based on their status
+        # If booking is confirmed or rejected, provider must have responded
+        db.session.execute(text("""
+            UPDATE bookings 
+            SET provider_responded = TRUE 
+            WHERE status IN ('confirmed', 'rejected')
+        """))
+        
+        db.session.commit()
+        
+        # Verify the migration
+        result = db.session.execute(text("SELECT COUNT(*) FROM bookings WHERE provider_responded = TRUE")).fetchone()
+        updated_count = result[0] if result else 0
+        
+        # Verify the column was added
+        inspector = inspect(db.engine)
+        new_columns = [col['name'] for col in inspector.get_columns('bookings')]
+        
+        return jsonify({
+            "status": "success",
+            "message": "provider_responded column added successfully",
+            "columns_before": columns,
+            "columns_after": new_columns,
+            "updated_bookings": updated_count,
+            "note": "Existing confirmed/rejected bookings marked as provider_responded=TRUE"
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/debug-providers', methods=['GET'])
 def debug_providers():

@@ -39,6 +39,7 @@ class Booking(db.Model):
     address = db.Column(db.Text, nullable=True)
     appointment_time = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), default='pending')  # pending, confirmed, rejected, expired
+    provider_responded = db.Column(db.Boolean, default=False)  # Track if provider has responded (any message)
     response_deadline = db.Column(db.DateTime, nullable=True)  # When the provider must respond by
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
