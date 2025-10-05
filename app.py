@@ -150,6 +150,101 @@ def format_appointment_time_et(appointment_time):
     appointment_time_et = appointment_time_utc.astimezone(et)
     return appointment_time_et.strftime('%A, %B %d at %I:%M %p ET')
 
+def detect_cancellation_request(message):
+    """Detect if customer message contains cancellation/rescheduling keywords"""
+    cancellation_keywords = [
+        'cancel', 'cancellation', 'cancelled', 'canceling',
+        'reschedule', 'rescheduling', 'reschedule',
+        'postpone', 'postponing', 'postponed',
+        'move', 'moving', 'change', 'changing',
+        'something came up', 'emergency', 'can\'t make it',
+        'need to cancel', 'need to reschedule', 'need to change',
+        'have to cancel', 'have to reschedule', 'have to change',
+        'sorry', 'apologies', 'apologize'
+    ]
+    
+    message_lower = message.lower()
+    
+    # Check for direct cancellation/rescheduling keywords
+    for keyword in cancellation_keywords:
+        if keyword in message_lower:
+            return True
+    
+    # Check for phrases that indicate cancellation intent
+    cancellation_phrases = [
+        'something came up',
+        'can\'t make it',
+        'won\'t be able to',
+        'need to move',
+        'have to move',
+        'different time',
+        'later time',
+        'another day',
+        'another time'
+    ]
+    
+    for phrase in cancellation_phrases:
+        if phrase in message_lower:
+            return True
+    
+    return False
+
+def notify_provider_of_cancellation(customer_phone, customer_message, booking=None):
+    """Notify provider when customer requests cancellation/rescheduling"""
+    try:
+        # Find the most recent confirmed booking for this customer
+        if not booking:
+            customer_phone_normalized = clean_phone_number(customer_phone).replace('+', '').replace('-', '').replace(' ', '')
+            
+            # Look for confirmed bookings from this customer in the last 7 days
+            cutoff_time = datetime.utcnow() - timedelta(days=7)
+            booking = Booking.query.filter(
+                Booking.status == 'confirmed',
+                Booking.created_at >= cutoff_time
+            ).filter(
+                Booking.customer_phone.like(f'%{customer_phone_normalized[-10:]}%')  # Match last 10 digits
+            ).order_by(Booking.created_at.desc()).first()
+        
+        if not booking:
+            print(f"⚠️ No recent confirmed booking found for customer {customer_phone}")
+            return False
+        
+        # Get provider info
+        provider = get_provider(booking.provider_id)
+        if not provider:
+            print(f"⚠️ Provider not found for booking {booking.id}")
+            return False
+        
+        # Create notification message for provider
+        customer_name = getattr(booking, 'customer_name', '') or 'Customer'
+        appointment_time = format_appointment_time_et(booking.appointment_time)
+        
+        provider_message = (
+            f"🚨 Cancellation Notice\n\n"
+            f"Customer: {customer_name} ({booking.customer_phone})\n"
+            f"Appointment: {appointment_time}\n\n"
+            f"Please contact the customer to confirm cancellation/rescheduling."
+        )
+        
+        # Send notification to provider
+        success, result = send_sms(provider['phone'], provider_message)
+        if success:
+            print(f"✓ Cancellation notification sent to provider {provider['name']}")
+            
+            # Update booking status to indicate cancellation requested
+            booking.status = 'cancellation_requested'
+            booking.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            return True
+        else:
+            print(f"✗ Failed to send cancellation notification to provider: {result}")
+            return False
+            
+    except Exception as e:
+        print(f"Error notifying provider of cancellation: {str(e)}")
+        return False
+
 def get_ai_support_response(message, phone=None, is_provider=False):
     """Generate AI support response for both customers and providers using OpenAI"""
     if not OPENAI_API_KEY:
@@ -948,20 +1043,49 @@ def sms_webhook():
                     user_type = "customer"
                     print(f"Processing {user_type} support message from {from_number}: '{text}'")
                     
-                    # Generate AI response for customer
-                    ai_response = get_ai_support_response(text, from_number, is_provider=False)
+                    # Check if this is a cancellation/rescheduling request
+                    is_cancellation_request = detect_cancellation_request(text)
                     
-                    if ai_response:
-                        print(f"Sending AI {user_type} response: {ai_response}")
-                        success, result = send_sms(from_number, ai_response)
-                        if success:
-                            print(f"✓ AI {user_type} support response sent successfully")
+                    if is_cancellation_request:
+                        print(f"🚨 Detected cancellation/rescheduling request from {from_number}")
+                        
+                        # Notify the provider
+                        cancellation_sent = notify_provider_of_cancellation(from_number, text)
+                        
+                        if cancellation_sent:
+                            # Send confirmation to customer
+                            customer_response = (
+                                "We understand you need to cancel/reschedule your appointment. "
+                                "We've notified your provider and they will contact you shortly to confirm. "
+                                "Thank you for letting us know!"
+                            )
                         else:
-                            print(f"✗ Failed to send AI {user_type} response: {result}")
+                            # Fallback if we couldn't find booking or notify provider
+                            customer_response = (
+                                "We understand you need to cancel/reschedule. "
+                                "Please contact us at goldtouchmobile.com or call us directly for immediate assistance."
+                            )
+                        
+                        success, result = send_sms(from_number, customer_response)
+                        if success:
+                            print(f"✓ Cancellation confirmation sent to customer")
+                        else:
+                            print(f"✗ Failed to send cancellation confirmation: {result}")
                     else:
-                        print("AI response generation failed, sending fallback message")
-                        fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile.com"
-                        send_sms(from_number, fallback_message)
+                        # Regular customer support with AI
+                        ai_response = get_ai_support_response(text, from_number, is_provider=False)
+                        
+                        if ai_response:
+                            print(f"Sending AI {user_type} response: {ai_response}")
+                            success, result = send_sms(from_number, ai_response)
+                            if success:
+                                print(f"✓ AI {user_type} support response sent successfully")
+                            else:
+                                print(f"✗ Failed to send AI {user_type} response: {result}")
+                        else:
+                            print("AI response generation failed, sending fallback message")
+                            fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For immediate assistance, please email goldtouchmobile.com"
+                            send_sms(from_number, fallback_message)
                 else:
                     # Unknown/unverified number - check if we've already sent basic redirect
                     normalized_phone = clean_phone_number(from_number).replace('+', '').replace('-', '').replace(' ', '')
@@ -1412,6 +1536,15 @@ def check_expired_bookings():
     """Background task to check for and handle expired bookings"""
     with app.app_context():
         try:
+            # Check if provider_responded column exists before proceeding
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            columns = [col['name'] for col in inspector.get_columns('bookings')]
+            
+            if 'provider_responded' not in columns:
+                print("⚠️ provider_responded column not found - skipping expired bookings check. Please run migration at /migrate-provider-responded")
+                return
+            
             now = datetime.utcnow()
             # Only check bookings from the last 24 hours to prevent processing old bookings
             cutoff_time = now - timedelta(hours=24)
@@ -1951,21 +2084,26 @@ def test_ai_support():
             """
         
         # Handle POST request
-        message = request.form.get('message', '').strip()
-        phone = request.form.get('phone', '').strip()
-        user_type = request.form.get('user_type', 'customer')
-        is_provider = (user_type == 'provider')
+        data = request.get_json()
+        message = data.get('message', '')
+        is_provider = data.get('is_provider', False)
+        phone = data.get('phone', '+15551234567')
         
         if not message:
-            return jsonify({"error": "Message is required"}), 400
+            return jsonify({
+                "error": "Message is required"
+            }), 400
         
         # Generate AI response
-        ai_response = get_ai_support_response(message, phone, is_provider=is_provider)
+        ai_response = get_ai_support_response(message, phone, is_provider)
         
         return jsonify({
             "status": "success",
-            "user_type": user_type,
-            "message": message,
+            "input": {
+                "message": message,
+                "is_provider": is_provider,
+                "phone": phone
+            },
             "ai_response": ai_response,
             "openai_configured": bool(OPENAI_API_KEY),
             "test_info": {
@@ -1976,14 +2114,74 @@ def test_ai_support():
         
     except Exception as e:
         return jsonify({
+            "error": str(e),
             "status": "error",
-            "message": str(e),
             "type": type(e).__name__
+        }), 500
+
+@app.route('/test-cancellation-detection', methods=['POST'])
+def test_cancellation_detection():
+    """Test endpoint for cancellation detection and provider notification"""
+    try:
+        data = request.get_json()
+        message = data.get('message', '')
+        customer_phone = data.get('customer_phone', '+15551234567')
+        send_notifications = data.get('send_notifications', False)
+        
+        if not message:
+            return jsonify({
+                "error": "Message is required"
+            }), 400
+        
+        # Test cancellation detection
+        is_cancellation = detect_cancellation_request(message)
+        
+        result = {
+            "status": "success",
+            "input": {
+                "message": message,
+                "customer_phone": customer_phone,
+                "send_notifications": send_notifications
+            },
+            "cancellation_detected": is_cancellation,
+            "provider_notified": False,
+            "customer_response_sent": False
+        }
+        
+        if is_cancellation and send_notifications:
+            # Actually send notifications if requested
+            provider_notified = notify_provider_of_cancellation(customer_phone, message)
+            result["provider_notified"] = provider_notified
+            
+            if provider_notified:
+                customer_response = (
+                    "We understand you need to cancel/reschedule your appointment. "
+                    "We've notified your provider and they will contact you shortly to confirm. "
+                    "Thank you for letting us know!"
+                )
+            else:
+                customer_response = (
+                    "We understand you need to cancel/reschedule. "
+                    "Please contact us at goldtouchmobile.com or call us directly for immediate assistance."
+                )
+            
+            # Send customer response if requested
+            success, sms_result = send_sms(customer_phone, customer_response)
+            result["customer_response_sent"] = success
+            result["customer_response"] = customer_response
+            result["sms_result"] = sms_result
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "status": "error"
         }), 500
 
 @app.route('/routes', methods=['GET'])
 def list_routes():
-    """List all available routes for debugging"""
+    """List all available routes"""
     routes = []
     for rule in app.url_map.iter_rules():
         routes.append({

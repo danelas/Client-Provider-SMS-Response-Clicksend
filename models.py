@@ -38,7 +38,7 @@ class Booking(db.Model):
     add_ons = db.Column(db.Text, nullable=True)  # Optional add-ons field
     address = db.Column(db.Text, nullable=True)
     appointment_time = db.Column(db.DateTime, nullable=True)
-    status = db.Column(db.String(20), default='pending')  # pending, confirmed, rejected, expired
+    status = db.Column(db.String(30), default='pending')  # pending, confirmed, rejected, expired, cancellation_requested
     provider_responded = db.Column(db.Boolean, default=False)  # Track if provider has responded (any message)
     response_deadline = db.Column(db.DateTime, nullable=True)  # When the provider must respond by
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
