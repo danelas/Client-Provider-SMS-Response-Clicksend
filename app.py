@@ -1052,19 +1052,8 @@ def sms_webhook():
                         # Notify the provider
                         cancellation_sent = notify_provider_of_cancellation(from_number, text)
                         
-                        if cancellation_sent:
-                            # Send confirmation to customer
-                            customer_response = (
-                                "We understand you need to cancel/reschedule your appointment. "
-                                "We've notified your provider and they will contact you shortly to confirm. "
-                                "Thank you for letting us know!"
-                            )
-                        else:
-                            # Fallback if we couldn't find booking or notify provider
-                            customer_response = (
-                                "We understand you need to cancel/reschedule. "
-                                "Please contact us at goldtouchmobile.com or call us directly for immediate assistance."
-                            )
+                        # Send simple confirmation to customer regardless of provider notification status
+                        customer_response = "Your massage has been cancelled. Thank you for letting us know."
                         
                         success, result = send_sms(from_number, customer_response)
                         if success:
