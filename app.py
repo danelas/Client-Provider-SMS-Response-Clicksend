@@ -1171,8 +1171,8 @@ def sms_webhook():
             
             # Send rejection message to customer
             alt_message = (
-                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
-                "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                "We appreciate your understanding and look forward to serving you."
             )
             success, msg = send_sms(booking.customer_phone, alt_message)
             if not success:
@@ -1553,8 +1553,8 @@ def check_expired_bookings():
                     
                     # Notify customer with same message as rejection
                     alt_message = (
-                        "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
-                        "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
+                        "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                        "We appreciate your understanding and look forward to serving you."
                     )
                     success, msg = send_sms(booking.customer_phone, alt_message)
                     if not success:
@@ -1896,8 +1896,8 @@ def debug_customer_sms():
             )
         elif scenario == 'rejection':
             message = (
-                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers.\n"
-                "As a thank-you for your flexibility, we'd like to offer you $15 off your next massage. We appreciate your understanding and look forward to serving you."
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                "We appreciate your understanding and look forward to serving you."
             )
         elif scenario == 'timeout':
             message = (
