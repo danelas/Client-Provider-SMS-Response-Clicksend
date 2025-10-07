@@ -695,13 +695,13 @@ def create_booking():
             
             if is_in_studio:
                 message = (
-                    f"Hey {provider['name']}, new request: {data['service_type']} "
+                    f"Hey {provider['name']}, Gold Touch Massage New Request: {data['service_type']} "
                     f"on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
-                    f"Hey {provider['name']}, new request: {data['service_type']} "
+                    f"Hey {provider['name']}, Gold Touch Massage New Request: {data['service_type']} "
                     f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
@@ -990,24 +990,39 @@ def sms_webhook():
                         break
             
             if is_known_provider:
-                # Handle provider questions with AI (always respond to providers)
-                user_type = "provider"
-                print(f"Processing {user_type} support message from {from_number}: '{text}'")
-                
-                # Generate AI response for provider
-                ai_response = get_ai_support_response(text, from_number, is_provider=True)
-                
-                if ai_response:
-                    print(f"Sending AI {user_type} response: {ai_response}")
-                    success, result = send_sms(from_number, ai_response)
+                # Check if this is a follow-up response (COMPLETED/ISSUE)
+                if text.lower() in ['completed', 'issue']:
+                    print(f"📋 Provider follow-up response: {text.upper()}")
+                    
+                    if text.lower() == 'completed':
+                        response_message = "Thank you for confirming! Glad everything went smoothly."
+                    else:  # 'issue'
+                        response_message = "Thanks for letting us know. We'll follow up with you shortly to address any concerns."
+                    
+                    success, result = send_sms(from_number, response_message)
                     if success:
-                        print(f"✓ AI {user_type} support response sent successfully")
+                        print(f"✓ Follow-up acknowledgment sent to provider")
                     else:
-                        print(f"✗ Failed to send AI {user_type} response: {result}")
+                        print(f"✗ Failed to send follow-up acknowledgment: {result}")
                 else:
-                    print("AI response generation failed, sending fallback message")
-                    fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For provider support, please email goldtouchmobile.com"
-                    send_sms(from_number, fallback_message)
+                    # Handle provider questions with AI (always respond to providers)
+                    user_type = "provider"
+                    print(f"Processing {user_type} support message from {from_number}: '{text}'")
+                    
+                    # Generate AI response for provider
+                    ai_response = get_ai_support_response(text, from_number, is_provider=True)
+                    
+                    if ai_response:
+                        print(f"Sending AI {user_type} response: {ai_response}")
+                        success, result = send_sms(from_number, ai_response)
+                        if success:
+                            print(f"✓ AI {user_type} support response sent successfully")
+                        else:
+                            print(f"✗ Failed to send AI {user_type} response: {result}")
+                    else:
+                        print("AI response generation failed, sending fallback message")
+                        fallback_message = "Thanks for contacting Gold Touch Mobile Massage! For provider support, please email goldtouchmobile.com"
+                        send_sms(from_number, fallback_message)
             else:
                 # Check if this is a verified customer (has made a booking)
                 customer_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
@@ -1521,6 +1536,97 @@ def debug_webhook():
             "type": type(e).__name__
         }), 500
 
+def send_followup_messages():
+    """Background task to send follow-up messages 30 minutes after confirmed bookings"""
+    with app.app_context():
+        try:
+            # Check if provider_responded column exists before proceeding
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            columns = [col['name'] for col in inspector.get_columns('bookings')]
+            
+            if 'provider_responded' not in columns:
+                print("⚠️ provider_responded column not found - skipping follow-up messages. Please run migration at /migrate-provider-responded")
+                return
+            
+            now = datetime.utcnow()
+            # Find confirmed bookings that are 30 minutes old and haven't had follow-up sent
+            followup_time = now - timedelta(minutes=30)
+            
+            # Look for confirmed bookings from the last 24 hours that need follow-up
+            cutoff_time = now - timedelta(hours=24)
+            
+            bookings_needing_followup = Booking.query.filter(
+                Booking.status == 'confirmed',
+                Booking.updated_at <= followup_time,  # At least 30 minutes since confirmation
+                Booking.updated_at >= cutoff_time,    # Within last 24 hours
+                Booking.created_at >= cutoff_time     # Only recent bookings
+            ).all()
+            
+            for booking in bookings_needing_followup:
+                try:
+                    # Check if we've already sent follow-up for this booking
+                    existing_followup = MessageLog.query.filter_by(
+                        phone_number=clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', ''),
+                        message_type=f'followup_booking_{booking.id}'
+                    ).first()
+                    
+                    if existing_followup:
+                        continue  # Already sent follow-up for this booking
+                    
+                    # Get provider info
+                    provider = get_provider(booking.provider_id)
+                    if not provider:
+                        print(f"⚠️ Provider not found for booking {booking.id}")
+                        continue
+                    
+                    customer_name = getattr(booking, 'customer_name', '') or 'Customer'
+                    provider_name = provider.get('name', 'your provider')
+                    
+                    # Send follow-up to customer
+                    customer_message = (
+                        f"Hi! How was your massage with {provider_name}? "
+                        f"We'd love to hear about your experience - please leave us a review on Google: "
+                        f"https://g.page/r/Cdv1UlWh_ZPLEAE/review"
+                    )
+                    
+                    customer_success, customer_result = send_sms(booking.customer_phone, customer_message)
+                    if customer_success:
+                        print(f"✓ Follow-up sent to customer for booking {booking.id}")
+                    else:
+                        print(f"✗ Failed to send follow-up to customer: {customer_result}")
+                    
+                    # Send follow-up to provider
+                    provider_message = (
+                        f"Hi {provider_name}! How did the appointment with {customer_name} go? "
+                        f"Please reply with: COMPLETED if everything went smoothly, or ISSUE if there were any problems. Thanks!"
+                    )
+                    
+                    provider_success, provider_result = send_sms(provider['phone'], provider_message)
+                    if provider_success:
+                        print(f"✓ Follow-up sent to provider for booking {booking.id}")
+                    else:
+                        print(f"✗ Failed to send follow-up to provider: {provider_result}")
+                    
+                    # Log that we sent follow-up messages
+                    if customer_success or provider_success:
+                        normalized_customer_phone = clean_phone_number(booking.customer_phone).replace('+', '').replace('-', '').replace(' ', '')
+                        followup_log = MessageLog(
+                            phone_number=normalized_customer_phone,
+                            message_type=f'followup_booking_{booking.id}',
+                            message_content=f'Follow-up sent for booking {booking.id}'
+                        )
+                        db.session.add(followup_log)
+                        db.session.commit()
+                        
+                        print(f"✓ Follow-up messages sent for booking {booking.id}")
+                    
+                except Exception as e:
+                    print(f"Error sending follow-up for booking {booking.id}: {str(e)}")
+                    
+        except Exception as e:
+            print(f"Error in send_followup_messages: {str(e)}")
+
 def check_expired_bookings():
     """Background task to check for and handle expired bookings"""
     with app.app_context():
@@ -1580,6 +1686,14 @@ def start_background_tasks():
         minutes=1,  # Check every minute
         id='expired_bookings_check',
         name='Check for expired bookings',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        func=send_followup_messages,
+        trigger='interval',
+        minutes=5,  # Check every 5 minutes for follow-ups
+        id='followup_messages_check',
+        name='Send follow-up messages',
         replace_existing=True
     )
     scheduler.start()
