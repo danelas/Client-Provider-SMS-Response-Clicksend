@@ -2342,14 +2342,24 @@ def test_ai_support():
 def register_provider():
     """Endpoint to automatically register a new provider from onboarding form"""
     try:
+        # Log the incoming request for debugging
+        print(f"=== PROVIDER REGISTRATION REQUEST ===")
+        print(f"Content-Type: {request.content_type}")
+        print(f"Is JSON: {request.is_json}")
+        print(f"Form data: {dict(request.form)}")
+        print(f"Raw data: {request.get_data()}")
+        
         # Get data from either JSON or form data
         if request.is_json:
             data = request.get_json()
+            print(f"JSON data: {data}")
         else:
             # Handle form data (application/x-www-form-urlencoded)
             data = request.form.to_dict()
+            print(f"Form data parsed: {data}")
         
         if not data:
+            print("❌ No data provided")
             return jsonify({
                 "status": "error",
                 "message": "No data provided"
@@ -2359,13 +2369,18 @@ def register_provider():
         provider_phone = data.get('phone', '').strip()
         
         # Validate required fields
+        print(f"Provider name: '{provider_name}'")
+        print(f"Provider phone: '{provider_phone}'")
+        
         if not provider_name:
+            print("❌ Provider name is missing")
             return jsonify({
                 "status": "error",
                 "message": "Provider name is required"
             }), 400
         
         if not provider_phone:
+            print("❌ Provider phone is missing")
             return jsonify({
                 "status": "error",
                 "message": "Provider phone number is required"
@@ -2418,6 +2433,34 @@ def register_provider():
         return jsonify({
             "status": "error",
             "message": f"Registration failed: {str(e)}"
+        }), 500
+
+@app.route('/list-providers', methods=['GET'])
+def list_providers():
+    """List all providers in the database"""
+    try:
+        providers = Provider.query.all()
+        provider_list = []
+        
+        for provider in providers:
+            provider_list.append({
+                "id": provider.id,
+                "provider_id": provider.provider_id,
+                "name": provider.name,
+                "phone": provider.phone,
+                "created_at": provider.created_at.isoformat() if provider.created_at else None
+            })
+        
+        return jsonify({
+            "status": "success",
+            "total_providers": len(provider_list),
+            "providers": provider_list
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
         }), 500
 
 @app.route('/test-cancellation-detection', methods=['GET'])
