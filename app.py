@@ -2435,9 +2435,9 @@ def register_provider():
             "message": f"Registration failed: {str(e)}"
         }), 500
 
-@app.route('/debug-providers', methods=['GET'])
-def debug_providers():
-    """Debug endpoint to list all providers in the database"""
+@app.route('/check-all-providers', methods=['GET'])
+def check_all_providers():
+    """Check all providers in the database"""
     try:
         providers = Provider.query.all()
         provider_list = []
