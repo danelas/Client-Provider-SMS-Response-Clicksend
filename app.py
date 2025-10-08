@@ -1591,18 +1591,36 @@ def send_followup_messages():
                 return
             
             now = datetime.utcnow()
-            # Find confirmed bookings that are 30 minutes old and haven't had follow-up sent
-            followup_time = now - timedelta(minutes=30)
             
             # Look for confirmed bookings from the last 24 hours that need follow-up
             cutoff_time = now - timedelta(hours=24)
             
-            bookings_needing_followup = Booking.query.filter(
+            # Get all confirmed bookings that might need follow-up
+            potential_bookings = Booking.query.filter(
                 Booking.status == 'confirmed',
-                Booking.updated_at <= followup_time,  # At least 30 minutes since confirmation
-                Booking.updated_at >= cutoff_time,    # Within last 24 hours
-                Booking.created_at >= cutoff_time     # Only recent bookings
+                Booking.appointment_time >= cutoff_time,    # Appointment within last 24 hours
+                Booking.created_at >= cutoff_time           # Only recent bookings
             ).all()
+            
+            bookings_needing_followup = []
+            for booking in potential_bookings:
+                # Extract session duration from service_type
+                service_duration = 60  # Default to 60 minutes
+                if booking.service_type and '90 min' in booking.service_type:
+                    service_duration = 90
+                elif booking.service_type and '60 min' in booking.service_type:
+                    service_duration = 60
+                elif booking.service_type and '45 min' in booking.service_type:
+                    service_duration = 45
+                elif booking.service_type and '30 min' in booking.service_type:
+                    service_duration = 30
+                
+                # Calculate when follow-up should be sent: appointment_time + session_duration + 30 min buffer
+                followup_send_time = booking.appointment_time + timedelta(minutes=service_duration + 30)
+                
+                # Check if it's time to send follow-up (appointment completed + 30 min buffer has passed)
+                if now >= followup_send_time:
+                    bookings_needing_followup.append(booking)
             
             for booking in bookings_needing_followup:
                 try:
