@@ -121,6 +121,63 @@ def get_provider(provider_id):
         print(f"Error loading providers: {str(e)}")
         return None
 
+def clean_phone_number_for_registration(phone):
+    """Clean phone number for provider registration - removes brackets, dashes, spaces and ensures +1 prefix"""
+    if not phone:
+        return None
+    
+    # Remove all non-digit characters except +
+    cleaned = re.sub(r'[^\d+]', '', str(phone))
+    
+    # Remove any + that's not at the beginning
+    if '+' in cleaned[1:]:
+        cleaned = cleaned[0] + cleaned[1:].replace('+', '')
+    
+    # If it starts with 1 but no +, add the +
+    if cleaned.startswith('1') and not cleaned.startswith('+1'):
+        cleaned = '+' + cleaned
+    
+    # If it's 10 digits (US number without country code), add +1
+    elif len(cleaned) == 10 and cleaned.isdigit():
+        cleaned = '+1' + cleaned
+    
+    # If it doesn't start with + but has 11 digits starting with 1, add +
+    elif len(cleaned) == 11 and cleaned.startswith('1') and not cleaned.startswith('+'):
+        cleaned = '+' + cleaned
+    
+    return cleaned
+
+def generate_next_provider_id():
+    """Generate the next available provider ID (provider60, provider61, etc.)"""
+    try:
+        # Get all existing provider IDs
+        existing_providers = Provider.query.all()
+        existing_ids = [p.provider_id for p in existing_providers if p.provider_id]
+        
+        # Extract numbers from provider IDs (provider60 -> 60)
+        numbers = []
+        for provider_id in existing_ids:
+            if provider_id.startswith('provider'):
+                try:
+                    number = int(provider_id.replace('provider', ''))
+                    numbers.append(number)
+                except ValueError:
+                    continue
+        
+        # Find the next available number
+        if not numbers:
+            next_number = 60  # Start from provider60
+        else:
+            next_number = max(numbers) + 1
+        
+        return f'provider{next_number}'
+    
+    except Exception as e:
+        print(f"Error generating provider ID: {e}")
+        # Fallback to timestamp-based ID
+        import time
+        return f'provider{int(time.time())}'
+
 def clean_phone_number(phone):
     """Helper function to clean and standardize phone numbers"""
     if not phone:
@@ -2281,65 +2338,108 @@ def test_ai_support():
             "type": type(e).__name__
         }), 500
 
-@app.route('/test-cancellation-detection', methods=['POST'])
-def test_cancellation_detection():
-    """Test endpoint for cancellation detection and provider notification"""
+@app.route('/register-provider', methods=['POST'])
+def register_provider():
+    """Endpoint to automatically register a new provider from onboarding form"""
     try:
+        # Get form data
         data = request.get_json()
-        message = data.get('message', '')
-        customer_phone = data.get('customer_phone', '+15551234567')
-        send_notifications = data.get('send_notifications', False)
-        
-        if not message:
+        if not data:
             return jsonify({
-                "error": "Message is required"
+                "status": "error",
+                "message": "No data provided"
             }), 400
         
-        # Test cancellation detection
-        is_cancellation = detect_cancellation_request(message)
+        provider_name = data.get('name', '').strip()
+        provider_phone = data.get('phone', '').strip()
         
-        result = {
+        # Validate required fields
+        if not provider_name:
+            return jsonify({
+                "status": "error",
+                "message": "Provider name is required"
+            }), 400
+        
+        if not provider_phone:
+            return jsonify({
+                "status": "error",
+                "message": "Provider phone number is required"
+            }), 400
+        
+        # Clean phone number
+        cleaned_phone = clean_phone_number_for_registration(provider_phone)
+        if not cleaned_phone:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid phone number format"
+            }), 400
+        
+        # Check if phone number already exists
+        existing_provider = Provider.query.filter_by(phone=cleaned_phone).first()
+        if existing_provider:
+            return jsonify({
+                "status": "error",
+                "message": f"Provider with phone {cleaned_phone} already exists",
+                "existing_provider_id": existing_provider.provider_id
+            }), 409
+        
+        # Generate next provider ID
+        provider_id = generate_next_provider_id()
+        
+        # Create new provider
+        new_provider = Provider(
+            provider_id=provider_id,
+            name=provider_name,
+            phone=cleaned_phone
+        )
+        
+        db.session.add(new_provider)
+        db.session.commit()
+        
+        print(f" New provider registered: {provider_id} - {provider_name} ({cleaned_phone})")
+        
+        return jsonify({
             "status": "success",
-            "input": {
-                "message": message,
-                "customer_phone": customer_phone,
-                "send_notifications": send_notifications
-            },
-            "cancellation_detected": is_cancellation,
-            "provider_notified": False,
-            "customer_response_sent": False
-        }
-        
-        if is_cancellation and send_notifications:
-            # Actually send notifications if requested
-            provider_notified = notify_provider_of_cancellation(customer_phone, message)
-            result["provider_notified"] = provider_notified
-            
-            if provider_notified:
-                customer_response = (
-                    "We understand you need to cancel/reschedule your appointment. "
-                    "We've notified your provider and they will contact you shortly to confirm. "
-                    "Thank you for letting us know!"
-                )
-            else:
-                customer_response = (
-                    "We understand you need to cancel/reschedule. "
-                    "Please contact us at goldtouchmobile.com or call us directly for immediate assistance."
-                )
-            
-            # Send customer response if requested
-            success, sms_result = send_sms(customer_phone, customer_response)
-            result["customer_response_sent"] = success
-            result["customer_response"] = customer_response
-            result["sms_result"] = sms_result
-        
-        return jsonify(result)
+            "message": "Provider registered successfully",
+            "provider_id": provider_id,
+            "name": provider_name,
+            "phone": cleaned_phone,
+            "dashboard_url": f"/providers"
+        }), 201
         
     except Exception as e:
+        db.session.rollback()
+        print(f"Error registering provider: {str(e)}")
         return jsonify({
-            "error": str(e),
-            "status": "error"
+            "status": "error",
+            "message": f"Registration failed: {str(e)}"
         }), 500
+
+@app.route('/test-cancellation-detection', methods=['GET'])
+def test_cancellation_detection():
+    """Test endpoint to check cancellation detection logic"""
+    test_messages = [
+        "Hello, my apologies. Something came up and I need to reschedule with Joseli at a later time this coming week.",
+        "I need to cancel my appointment",
+        "Can we reschedule for tomorrow?",
+        "Sorry, I can't make it today",
+        "Emergency came up, need to postpone",
+        "Hi, how are you?",  # Should not detect
+        "Thank you for the massage"  # Should not detect
+    ]
+    
+    results = []
+    for message in test_messages:
+        is_cancellation = detect_cancellation_request(message)
+        results.append({
+            "message": message,
+            "is_cancellation": is_cancellation
+        })
+    
+    return jsonify({
+        "status": "success",
+        "test_results": results
+    })
 
 @app.route('/routes', methods=['GET'])
 def list_routes():
