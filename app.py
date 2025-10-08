@@ -2342,8 +2342,13 @@ def test_ai_support():
 def register_provider():
     """Endpoint to automatically register a new provider from onboarding form"""
     try:
-        # Get form data
-        data = request.get_json()
+        # Get data from either JSON or form data
+        if request.is_json:
+            data = request.get_json()
+        else:
+            # Handle form data (application/x-www-form-urlencoded)
+            data = request.form.to_dict()
+        
         if not data:
             return jsonify({
                 "status": "error",
