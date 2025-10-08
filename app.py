@@ -695,13 +695,13 @@ def create_booking():
             
             if is_in_studio:
                 message = (
-                    f"Hey {provider['name']}, Gold Touch Massage New Request: {data['service_type']} "
+                    f"Hey {provider['name']}, New Request: {data['service_type']} "
                     f"on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
-                    f"Hey {provider['name']}, Gold Touch Massage New Request: {data['service_type']} "
+                    f"Hey {provider['name']}, New Request: {data['service_type']} "
                     f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
