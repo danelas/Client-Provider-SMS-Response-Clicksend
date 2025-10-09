@@ -2365,8 +2365,9 @@ def register_provider():
                 "message": "No data provided"
             }), 400
         
-        provider_name = data.get('name', '').strip()
-        provider_phone = data.get('phone', '').strip()
+        # Handle both lowercase and capitalized field names
+        provider_name = (data.get('name') or data.get('Name') or '').strip()
+        provider_phone = (data.get('phone') or data.get('Phone') or '').strip()
         
         # Validate required fields
         print(f"Provider name: '{provider_name}'")
