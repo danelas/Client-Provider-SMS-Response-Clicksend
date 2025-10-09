@@ -2352,9 +2352,25 @@ def test_ai_support():
             "type": type(e).__name__
         }), 500
 
-@app.route('/register-provider', methods=['POST'])
+@app.route('/register-provider', methods=['GET', 'POST'])
 def register_provider():
     """Endpoint to automatically register a new provider from onboarding form"""
+    
+    # Handle GET request for testing
+    if request.method == 'GET':
+        return jsonify({
+            "message": "register-provider endpoint is working",
+            "method": "GET",
+            "note": "Use POST with name and phone to register a provider",
+            "test_form": {
+                "url": "/register-provider",
+                "method": "POST",
+                "fields": ["name", "phone"]
+            },
+            "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
+        })
+    
+    # Handle POST request for actual registration
     try:
         # Log the incoming request for debugging
         print(f"\n🚀 REGISTER-PROVIDER ENDPOINT CALLED!")
@@ -2560,7 +2576,7 @@ def register_provider():
             }
         }), 500
 
-@app.route('/register-provider', methods=['GET'])
+@app.route('/register-provider-info', methods=['GET'])
 def register_provider_info():
     """GET endpoint to check if register-provider is accessible"""
     return jsonify({
@@ -2569,6 +2585,7 @@ def register_provider_info():
         "description": "Use POST to register a new provider",
         "required_fields": ["name", "phone"],
         "test_endpoint": "/test-welcome-sms",
+        "register_endpoint": "/register-provider",
         "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
     })
 
