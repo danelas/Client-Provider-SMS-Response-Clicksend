@@ -153,7 +153,7 @@ def generate_next_provider_id():
     try:
         # Get all existing provider IDs
         existing_providers = Provider.query.all()
-        existing_ids = [p.provider_id for p in existing_providers if p.provider_id]
+        existing_ids = [p.id for p in existing_providers if p.id]
         
         # Extract numbers from provider IDs (provider60 -> 60)
         numbers = []
@@ -2402,7 +2402,7 @@ def register_provider():
             return jsonify({
                 "status": "error",
                 "message": f"Provider with phone {cleaned_phone} already exists",
-                "existing_provider_id": existing_provider.provider_id
+                "existing_provider_id": existing_provider.id
             }), 409
         
         # Generate next provider ID
@@ -2410,7 +2410,7 @@ def register_provider():
         
         # Create new provider
         new_provider = Provider(
-            provider_id=provider_id,
+            id=provider_id,
             name=provider_name,
             phone=cleaned_phone
         )
@@ -2447,7 +2447,6 @@ def check_all_providers():
         for provider in providers:
             provider_list.append({
                 "id": provider.id,
-                "provider_id": provider.provider_id,
                 "name": provider.name,
                 "phone": provider.phone,
                 "created_at": provider.created_at.isoformat() if provider.created_at else None
