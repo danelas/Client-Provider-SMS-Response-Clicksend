@@ -2576,6 +2576,38 @@ def register_provider():
             }
         }), 500
 
+@app.route('/debug-endpoints', methods=['GET'])
+def debug_endpoints():
+    """Debug endpoint to check server status and available routes"""
+    import time
+    
+    # Get all routes
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': list(rule.methods - {'HEAD', 'OPTIONS'}),
+            'rule': str(rule)
+        })
+    
+    # Find register-provider routes
+    register_routes = [r for r in routes if 'register-provider' in r['rule']]
+    
+    return jsonify({
+        "server_status": "running",
+        "timestamp": datetime.utcnow().isoformat(),
+        "server_time": time.time(),
+        "register_provider_routes": register_routes,
+        "all_routes_count": len(routes),
+        "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY),
+        "test_instructions": {
+            "1": "Try GET /register-provider-info",
+            "2": "Try GET /register-provider", 
+            "3": "Try POST /test-welcome-sms with JSON data",
+            "4": "Check if form submits to /register-provider"
+        }
+    })
+
 @app.route('/register-provider-info', methods=['GET'])
 def register_provider_info():
     """GET endpoint to check if register-provider is accessible"""
