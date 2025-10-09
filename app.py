@@ -2357,11 +2357,16 @@ def register_provider():
     """Endpoint to automatically register a new provider from onboarding form"""
     try:
         # Log the incoming request for debugging
+        print(f"\n🚀 REGISTER-PROVIDER ENDPOINT CALLED!")
         print(f"=== PROVIDER REGISTRATION REQUEST ===")
+        print(f"Timestamp: {datetime.utcnow().isoformat()}")
         print(f"Content-Type: {request.content_type}")
         print(f"Is JSON: {request.is_json}")
         print(f"Form data: {dict(request.form)}")
         print(f"Raw data: {request.get_data()}")
+        print(f"Request method: {request.method}")
+        print(f"Request URL: {request.url}")
+        print(f"Request headers: {dict(request.headers)}")
         
         # Get data from either JSON or form data
         if request.is_json:
@@ -2553,6 +2558,102 @@ def register_provider():
                 "provider_id": provider_id if 'provider_id' in locals() else None,
                 "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
             }
+        }), 500
+
+@app.route('/register-provider', methods=['GET'])
+def register_provider_info():
+    """GET endpoint to check if register-provider is accessible"""
+    return jsonify({
+        "message": "register-provider endpoint is accessible",
+        "methods": ["POST"],
+        "description": "Use POST to register a new provider",
+        "required_fields": ["name", "phone"],
+        "test_endpoint": "/test-welcome-sms",
+        "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
+    })
+
+@app.route('/test-welcome-sms', methods=['POST'])
+def test_welcome_sms():
+    """Test endpoint to manually test welcome SMS functionality"""
+    try:
+        print(f"\n🧪 TESTING WELCOME SMS FUNCTIONALITY")
+        
+        # Get test data
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        test_name = data.get('name', 'Test Provider')
+        test_phone = data.get('phone', '+15551234567')
+        test_provider_id = data.get('provider_id', 'test_provider_123')
+        
+        print(f"📋 Test Parameters:")
+        print(f"  - Name: {test_name}")
+        print(f"  - Phone: {test_phone}")
+        print(f"  - Provider ID: {test_provider_id}")
+        
+        # Check TextMagic credentials
+        print(f"🔧 SMS Configuration Check:")
+        print(f"  - TEXTMAGIC_USERNAME: {'✅ Set' if TEXTMAGIC_USERNAME else '❌ Missing'}")
+        print(f"  - TEXTMAGIC_API_KEY: {'✅ Set' if TEXTMAGIC_API_KEY else '❌ Missing'}")
+        print(f"  - TEXTMAGIC_FROM_NUMBER: {TEXTMAGIC_FROM_NUMBER if TEXTMAGIC_FROM_NUMBER else '❌ Missing'}")
+        
+        if not TEXTMAGIC_USERNAME or not TEXTMAGIC_API_KEY:
+            return jsonify({
+                "status": "error",
+                "message": "TextMagic credentials not configured",
+                "debug": {
+                    "username_set": bool(TEXTMAGIC_USERNAME),
+                    "api_key_set": bool(TEXTMAGIC_API_KEY),
+                    "from_number": TEXTMAGIC_FROM_NUMBER
+                }
+            }), 400
+        
+        # Create welcome message
+        welcome_message = (
+            f"🎉 Welcome to Gold Touch Mobile Massage, {test_name}!\n\n"
+            f"Your provider ID is: {test_provider_id}\n\n"
+            f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
+            f"You have 15 minutes to respond to each request.\n\n"
+            f"For support, contact us at goldtouchmobile.com\n\n"
+            f"This is an automated AI message welcoming you aboard!"
+        )
+        
+        print(f"📝 Welcome Message:")
+        print(f"  - Length: {len(welcome_message)} characters")
+        print(f"  - Content: {welcome_message}")
+        
+        # Send SMS
+        print(f"📱 Sending test welcome SMS...")
+        sms_success, sms_result = send_sms(test_phone, welcome_message)
+        
+        print(f"📊 SMS Result:")
+        print(f"  - Success: {sms_success}")
+        print(f"  - Result: {sms_result}")
+        
+        return jsonify({
+            "status": "success" if sms_success else "error",
+            "message": "Test welcome SMS completed",
+            "sms_sent": sms_success,
+            "sms_result": sms_result,
+            "test_data": {
+                "name": test_name,
+                "phone": test_phone,
+                "provider_id": test_provider_id,
+                "message_length": len(welcome_message)
+            },
+            "config": {
+                "textmagic_username_set": bool(TEXTMAGIC_USERNAME),
+                "textmagic_api_key_set": bool(TEXTMAGIC_API_KEY),
+                "textmagic_from_number": TEXTMAGIC_FROM_NUMBER
+            }
+        })
+        
+    except Exception as e:
+        print(f"💥 Error in test welcome SMS: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Test failed: {str(e)}",
+            "error_type": type(e).__name__
         }), 500
 
 @app.route('/check-all-providers', methods=['GET'])
