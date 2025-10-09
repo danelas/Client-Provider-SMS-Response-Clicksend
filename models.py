@@ -10,7 +10,6 @@ class Provider(db.Model):
     id = db.Column(db.String(50), primary_key=True)  # provider_id like 'provider1', 'provider2'
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
-    form_created = db.Column(db.Boolean, default=False)  # Track if provider form has been created
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
