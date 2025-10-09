@@ -2472,11 +2472,10 @@ def register_provider():
         else:
             # Create welcome message
             welcome_message = (
-                f" Welcome to Gold Touch, {provider_name}!\n\n"
-                
-                f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
-                f"You have 15 minutes to respond to each request.\n\n"
-                f"Feel free to ask me anything! I'm here to help.\n\nFor system errors, contact: 954-614-4683\n\n"
+                f"🎉 Welcome to Gold Touch, {provider_name}!\n\n"
+                f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. You have 15 minutes to respond to each request.\n\n"
+                f"Feel free to ask me anything! I'm here to help.\n\n"
+                f"For system errors, contact: 954-614-4683\n\n"
                 f"This is an automated AI assistant welcoming you aboard!"
             )
             
@@ -2658,10 +2657,9 @@ def test_welcome_sms():
         # Create welcome message
         welcome_message = (
             f"🎉 Welcome to Gold Touch, {test_name}!\n\n"
-            f"Your provider ID is: {test_provider_id}\n\n"
-            f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
-            f"You have 15 minutes to respond to each request.\n\n"
-            f"Feel free to ask me anything! I'm here to help.\n\nFor system errors, contact: 954-614-4683\n\n"
+            f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. You have 15 minutes to respond to each request.\n\n"
+            f"Feel free to ask me anything! I'm here to help.\n\n"
+            f"For system errors, contact: 954-614-4683\n\n"
             f"This is an automated AI assistant welcoming you aboard!"
         )
         
