@@ -15,6 +15,7 @@ import openai
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here-change-in-production')
 
 # Database configuration
 database_url = os.getenv('DATABASE_URL')
@@ -1357,6 +1358,9 @@ def list_providers():
 @app.route('/providers/add', methods=['POST', 'GET'])
 def add_provider():
     """Add a new provider"""
+    # Ensure database tables exist
+    db.create_all()
+    
     if request.method == 'GET':
         # Show form
         return """
@@ -1425,6 +1429,8 @@ def add_provider():
 def manage_providers():
     """Provider management interface"""
     try:
+        # Ensure database tables exist
+        db.create_all()
         providers = Provider.query.all()
         
         provider_rows = ""
@@ -1473,6 +1479,8 @@ def manage_providers():
 def edit_provider(provider_id):
     """Edit an existing provider"""
     try:
+        # Ensure database tables exist
+        db.create_all()
         provider = Provider.query.get(provider_id)
         
         if not provider:
@@ -1535,7 +1543,11 @@ def edit_provider(provider_id):
 def delete_provider(provider_id):
     """Delete a provider"""
     try:
-        provider = Provider.query.get(provider_id)
+        # Ensure database tables exist
+        db.create_all()
+        
+        # Query provider directly
+        provider = Provider.query.filter_by(id=provider_id).first()
         
         if not provider:
             return jsonify({"error": "Provider not found"}), 404
@@ -1560,6 +1572,7 @@ def delete_provider(provider_id):
         """
         
     except Exception as e:
+        print(f"Error deleting provider: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/debug-webhook', methods=['POST'])
