@@ -2433,21 +2433,126 @@ def register_provider():
         
         print(f" New provider registered: {provider_id} - {provider_name} ({cleaned_phone})")
         
+        # Send welcome SMS to new provider with comprehensive debugging
+        print(f"\n=== WELCOME SMS DEBUGGING ===")
+        print(f" Target: {provider_name} at {cleaned_phone}")
+        print(f" Provider ID: {provider_id}")
+        
+        # Check TextMagic credentials before attempting SMS
+        print(f" SMS Configuration Check:")
+        print(f"  - TEXTMAGIC_USERNAME: {' Set' if TEXTMAGIC_USERNAME else 'Missing'}")
+        print(f"  - TEXTMAGIC_API_KEY: {' Set' if TEXTMAGIC_API_KEY else 'Missing'}")
+        print(f"  - TEXTMAGIC_FROM_NUMBER: {TEXTMAGIC_FROM_NUMBER if TEXTMAGIC_FROM_NUMBER else 'Missing'}")
+        
+        if not TEXTMAGIC_USERNAME or not TEXTMAGIC_API_KEY:
+            print(" CRITICAL: TextMagic credentials not configured - SMS will fail")
+            sms_success = False
+            sms_result = "TextMagic credentials not configured"
+        else:
+            # Create welcome message
+            welcome_message = (
+                f" Welcome to Gold Touch Mobile Massage, {provider_name}!\n\n"
+                f"Your provider ID is: {provider_id}\n\n"
+                f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
+                f"You have 15 minutes to respond to each request.\n\n"
+                f"For support, contact us at goldtouchmobile.com\n\n"
+                f"This is an automated AI message welcoming you aboard!"
+            )
+            
+            print(f" Welcome message created:")
+            print(f"  - Length: {len(welcome_message)} characters")
+            print(f"  - Content preview: {welcome_message[:100]}...")
+            
+            # Validate phone number format
+            if not cleaned_phone or not cleaned_phone.startswith('+'):
+                print(f" Invalid phone format: '{cleaned_phone}'")
+                sms_success = False
+                sms_result = f"Invalid phone number format: {cleaned_phone}"
+            else:
+                print(f" Phone number format valid: {cleaned_phone}")
+                
+                # Attempt to send SMS with detailed logging
+                print(f" Attempting to send welcome SMS...")
+                try:
+                    sms_success, sms_result = send_sms(cleaned_phone, welcome_message)
+                    
+                    print(f" SMS Send Result:")
+                    print(f"  - Success: {sms_success}")
+                    print(f"  - Result: {sms_result}")
+                    
+                    if sms_success:
+                        print(f" Welcome SMS sent successfully to {provider_name}")
+                        print(f"   Phone: {cleaned_phone}")
+                        print(f"   Provider: {provider_id}")
+                    else:
+                        print(f" Failed to send welcome SMS to {provider_name}")
+                        print(f"   Phone: {cleaned_phone}")
+                        print(f"   Error: {sms_result}")
+                        print(f"   Possible causes:")
+                        print(f"     - Invalid phone number format")
+                        print(f"     - TextMagic API issues")
+                        print(f"     - Network connectivity problems")
+                        print(f"     - TextMagic account balance/limits")
+                        
+                except Exception as sms_error:
+                    print(f" EXCEPTION during SMS send:")
+                    print(f"   Error type: {type(sms_error).__name__}")
+                    print(f"   Error message: {str(sms_error)}")
+                    print(f"   Provider: {provider_name} ({cleaned_phone})")
+                    sms_success = False
+                    sms_result = f"Exception during SMS send: {str(sms_error)}"
+        
+        print(f"=== WELCOME SMS DEBUGGING END ===\n")
+        
+        # Log final SMS status
+        if not sms_success:
+            print(f" PROVIDER REGISTERED BUT SMS FAILED:")
+            print(f"   Provider: {provider_name} ({provider_id})")
+            print(f"   Phone: {cleaned_phone}")
+            print(f"   SMS Error: {sms_result}")
+            print(f"   Action: Provider registered successfully, but welcome SMS not sent")
+        
         return jsonify({
             "status": "success",
             "message": "Provider registered successfully",
             "provider_id": provider_id,
             "name": provider_name,
             "phone": cleaned_phone,
-            "dashboard_url": f"/providers"
+            "dashboard_url": f"/providers",
+            "welcome_sms_sent": sms_success,
+            "sms_result": sms_result if not sms_success else "SMS sent successfully",
+            "debug_info": {
+                "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY),
+                "phone_format_valid": cleaned_phone.startswith('+') if cleaned_phone else False,
+                "message_length": len(welcome_message) if 'welcome_message' in locals() else 0
+            }
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        print(f"Error registering provider: {str(e)}")
+        print(f"\nCRITICAL ERROR during provider registration:")
+        print(f"   Error type: {type(e).__name__}")
+        print(f"   Error message: {str(e)}")
+        print(f"   Provider data: name='{provider_name if 'provider_name' in locals() else 'N/A'}', phone='{provider_phone if 'provider_phone' in locals() else 'N/A'}'")
+        print(f"   Cleaned phone: '{cleaned_phone if 'cleaned_phone' in locals() else 'N/A'}'")
+        print(f"   Provider ID: '{provider_id if 'provider_id' in locals() else 'N/A'}'")
+        
+        # Import traceback for detailed error info
+        import traceback
+        print(f"   Full traceback:")
+        traceback.print_exc()
+        
         return jsonify({
             "status": "error",
-            "message": f"Registration failed: {str(e)}"
+            "message": f"Registration failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "debug_info": {
+                "provider_name": provider_name if 'provider_name' in locals() else None,
+                "provider_phone": provider_phone if 'provider_phone' in locals() else None,
+                "cleaned_phone": cleaned_phone if 'cleaned_phone' in locals() else None,
+                "provider_id": provider_id if 'provider_id' in locals() else None,
+                "textmagic_configured": bool(TEXTMAGIC_USERNAME and TEXTMAGIC_API_KEY)
+            }
         }), 500
 
 @app.route('/check-all-providers', methods=['GET'])
