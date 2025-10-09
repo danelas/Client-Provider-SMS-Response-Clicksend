@@ -2472,12 +2472,12 @@ def register_provider():
         else:
             # Create welcome message
             welcome_message = (
-                f" Welcome to Gold Touch Mobile Massage, {provider_name}!\n\n"
-                f"Your provider ID is: {provider_id}\n\n"
+                f" Welcome to Gold Touch, {provider_name}!\n\n"
+                
                 f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
                 f"You have 15 minutes to respond to each request.\n\n"
-                f"For support, contact us at goldtouchmobile.com\n\n"
-                f"This is an automated AI message welcoming you aboard!"
+                f"Feel free to ask me anything! I'm here to help.\n\nFor system errors, contact: 954-614-4683\n\n"
+                f"This is an automated AI assistant welcoming you aboard!"
             )
             
             print(f" Welcome message created:")
@@ -2657,12 +2657,12 @@ def test_welcome_sms():
         
         # Create welcome message
         welcome_message = (
-            f"🎉 Welcome to Gold Touch Mobile Massage, {test_name}!\n\n"
+            f"🎉 Welcome to Gold Touch, {test_name}!\n\n"
             f"Your provider ID is: {test_provider_id}\n\n"
             f"You'll receive booking requests via SMS. Reply Y to accept or N to decline. "
             f"You have 15 minutes to respond to each request.\n\n"
-            f"For support, contact us at goldtouchmobile.com\n\n"
-            f"This is an automated AI message welcoming you aboard!"
+            f"Feel free to ask me anything! I'm here to help.\n\nFor system errors, contact: 954-614-4683\n\n"
+            f"This is an automated AI assistant welcoming you aboard!"
         )
         
         print(f"📝 Welcome Message:")
@@ -2823,3 +2823,4 @@ if __name__ == '__main__':
     # Run the app (background tasks already started above)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
