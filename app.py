@@ -363,11 +363,17 @@ COMPREHENSIVE PROVIDER FAQ:
 1. How does the appointment system work?
 Clients book directly through our online system. Once a booking is made, you'll get notified right away by text or email (whichever you prefer). You'll always be able to confirm or decline an appointment.
 
+PROFILE SETUP:
+- We take care of your profile setup for you
+- We also have upgrades if you want to build your own customized premium profile and more at https://goldtouchmobile.com/feature-my-profile/
+
 2. How much notice will I get before a client appointment?
 Ideally, you'll be notified several hours in advance or more. We don't allow last-minute bookings unless you've specifically marked yourself as available. You'll always have the ability to accept or reject any appointment.
 
-3. Can I set custom hours or time frames for each day?
-Yes — you'll be able to set your exact availability. For example, "Tuesdays after 4:30 PM" or "Fridays between 10 AM and 2 PM." Clients will only see the time slots you've made available.
+3. Can I set custom hours or time frames for each day? Can I start on a specific date?
+We're still working on the scheduling feature for providers to set their own availability.
+
+For start dates: No problem, we will put you on the site at that time. Just let us know your preferred start date and we'll handle it.
 
 4. How long is the agreement valid?
 The agreement is open and ongoing — it doesn't lock you into a time period. It simply outlines expectations, payment structure, and client policies.
@@ -378,18 +384,18 @@ Yes, absolutely. You can pause your availability at any time or step away when n
 6. What if I have to cancel or I'm unavailable?
 We ask that you give us as much notice as possible. Repeated unresponsiveness or missed sessions without notice may lead to removal from the site. After three unnotified absences or cancellations, your profile will be deactivated and you'll no longer be able to work with us unless you contact us in advance to let us know you'll be away.
 
-8. How do client payments work? Do I need to collect money?
-In most cases, we handle payment directly from the client. You'll be informed before each appointment of the total price the client was charged based on:
+8. How do client payments work? Do I need to collect money? Are payouts weekly or bi-weekly? Where do I set up the account to be paid?
+Payment is made by the client after the massage directly to you. You then send Gold Touch its portion through:
+- Zelle: goldtouchmassage1@gmail.com 
+- Venmo: https://www.venmo.com/u/goldtouchmassage
+
+You do not need to set up any payment account - everything is done for you as part of being with Gold Touch Massage brand. We do this to keep things smooth. You'll be informed before each appointment of the total price and your earnings breakdown based on:
 - The location
 - The massage type  
 - Specialty/Add-on Type
 - Duration
 
-Here's how it works:
-Cash Payments: In some cases, the client may be paying in cash. If so, you will:
-- Collect the exact amount in person
-- Then send our portion (your split is kept, the rest transferred to us via Zelle or preferred method)
-We always make sure you know the payment details before you arrive, so there are no surprises or awkward moments.
+You keep your portion and send Gold Touch our portion after collecting payment from the client. There are no scheduled payouts since you receive payment directly from clients immediately after each service.
 
 9. How does Gold Touch Massage protect providers?
 We send a quick text after every massage to check in and ensure everything went smoothly. Your safety is our priority. Every client who books through Gold Touch agrees to our terms, which include:
@@ -414,9 +420,27 @@ PROVIDER PROTECTIONS & SAFETY:
 - Post-session safety check-ins via text
 - Professional wellness brand that deters inappropriate requests
 
-TONE: Be supportive and professional. Providers are your partners. Keep responses concise for SMS. Always direct complex issues to goldtouchmobile.com.
+IMPORTANT CLARIFICATIONS:
+- Gold Touch does NOT provide clients or guarantee bookings to providers
+- We are a booking platform - clients find and book services through our website
+- Your bookings depend on client demand, your availability, and service quality
+- We handle marketing the platform, but individual provider success varies
 
-If you cannot answer a provider question, direct them to email goldtouchmobile.com for support."""
+WHEN PROVIDERS SAY "I NEED CLIENTS":
+Respond with: "We are growing every day and doing our best to get you as many clients as we can. We're constantly working on marketing the platform to bring in more bookings for all our providers."
+
+WHEN PROVIDERS REPORT CLIENT CANCELLATIONS:
+Respond with: "Sorry about the cancellation - we know that's disappointing when you've set aside the time. If you need to discuss anything about the booking, feel free to contact goldtouchmobile.com/contact-us."
+
+WHAT WE DON'T OFFER:
+- Client referrals or leads to individual providers
+- Guaranteed minimum bookings or income
+- Marketing services for individual providers
+- Real-time client matching or assignment
+
+TONE: Be supportive and professional. Providers are your partners. Keep responses concise for SMS. Be honest about what Gold Touch does and doesn't provide. Always direct complex issues to goldtouchmobile.com/contact-us.
+
+If you cannot answer a provider question, direct them to goldtouchmobile.com/contact-us for support."""
         else:
             # Customer-specific knowledge base
             system_prompt = """You are a helpful customer support agent for Gold Touch Mobile Massage, a professional massage service. 
@@ -970,7 +994,7 @@ def decline_booking_manual(booking_id):
         # Send rejection message to customer
         alt_message = (
             "We're sorry, but the provider you selected is not available. "
-            "You can book with another provider here: goldtouchmobile.com/providers\n\n"
+            "You can book with another provider here: goldtouchmobile.com\n\n"
             "We apologize for any inconvenience."
         )
         success, msg = send_sms(booking.customer_phone, alt_message)
@@ -1045,6 +1069,12 @@ def sms_webhook():
         
         if not text or not from_number:
             print("Missing text or from_number")
+            return jsonify({"status": "ok"}), 200
+        
+        # Filter out iPhone reactions and similar automated responses
+        reaction_keywords = ['loved', 'liked', 'disliked', 'laughed', 'emphasized', 'questioned']
+        if any(keyword in text.lower() for keyword in reaction_keywords):
+            print(f"Ignoring iPhone reaction: '{text}'")
             return jsonify({"status": "ok"}), 200
         
         # First, check if this message is from a provider with a pending booking
@@ -1243,7 +1273,7 @@ def sms_webhook():
                     else:
                         # Send basic booking redirect message (first time only)
                         print(f"⚠️ Unknown number {from_number} - sending first-time basic booking redirect: '{text}'")
-                        basic_message = "Hi! Please visit goldtouchmobile.com/providers to book your massage appointment."
+                        basic_message = "Hi! Please visit goldtouchmobile.com to book your massage appointment."
                         
                         success, result = send_sms(from_number, basic_message)
                         if success:
@@ -1324,7 +1354,7 @@ def sms_webhook():
             
             # Send rejection message to customer
             alt_message = (
-                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com. "
                 "We appreciate your understanding and look forward to serving you."
             )
             success, msg = send_sms(booking.customer_phone, alt_message)
@@ -1827,7 +1857,7 @@ def check_expired_bookings():
                     
                     # Notify customer with same message as rejection
                     alt_message = (
-                        "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                        "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com. "
                         "We appreciate your understanding and look forward to serving you."
                     )
                     success, msg = send_sms(booking.customer_phone, alt_message)
@@ -2178,14 +2208,14 @@ def debug_customer_sms():
             )
         elif scenario == 'rejection':
             message = (
-                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com/providers. "
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com. "
                 "We appreciate your understanding and look forward to serving you."
             )
         elif scenario == 'timeout':
             message = (
                 "We're sorry, but the provider hasn't responded to your booking request. "
                 "We're working to find you an alternative provider. "
-                "You can also book with another provider here: goldtouchmobile.com/providers.\n\n"
+                "You can also book with another provider here: goldtouchmobile.com.\n\n"
                 "We apologize for any inconvenience and hope to serve you soon!"
             )
         else:
