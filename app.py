@@ -1428,12 +1428,30 @@ def add_provider():
         phone = request.form.get('phone')
         
         if not all([provider_id, name, phone]):
-            return jsonify({"error": "Missing required fields"}), 400
+            return f"""
+            <html>
+            <head><title>Error</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>❌ Error</h2>
+                <p>Missing required fields. Please fill in all fields.</p>
+                <p><a href="/providers/add">Try Again</a> | <a href="/providers/manage">Back to Manage</a></p>
+            </body>
+            </html>
+            """
         
         # Check if provider already exists
         existing_provider = Provider.query.get(provider_id)
         if existing_provider:
-            return jsonify({"error": f"Provider with ID '{provider_id}' already exists"}), 400
+            return f"""
+            <html>
+            <head><title>Error</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>❌ Error</h2>
+                <p>Provider with ID '{provider_id}' already exists.</p>
+                <p><a href="/providers/add">Try Again</a> | <a href="/providers/manage">Back to Manage</a></p>
+            </body>
+            </html>
+            """
         
         # Create new provider
         new_provider = Provider(id=provider_id, name=name, phone=phone)
@@ -1454,14 +1472,24 @@ def add_provider():
         """
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return f"""
+        <html>
+        <head><title>Database Error</title></head>
+        <body style="font-family: Arial; padding: 20px;">
+            <h2>⚠️ Database Connection Issue</h2>
+            <p>Unable to add provider due to database connection problems.</p>
+            <p><strong>Error:</strong> {str(e)[:200]}...</p>
+            <p>Please try again later when the database connection is restored.</p>
+            <p><a href="/providers/add">Try Again</a> | <a href="/providers/manage">Back to Manage</a></p>
+        </body>
+        </html>
+        """
 
 @app.route('/providers/manage', methods=['GET'])
 def manage_providers():
     """Provider management interface"""
     try:
         providers = Provider.query.all()
-        
         provider_rows = ""
         for provider in providers:
             provider_rows += f"""
@@ -1475,34 +1503,46 @@ def manage_providers():
                 </td>
             </tr>
             """
-        
-        return f"""
-        <html>
-        <head><title>Manage Providers</title></head>
-        <body style="font-family: Arial; padding: 20px;">
-            <h2>Manage Providers</h2>
-            <p><a href="/providers/add" style="background: #28a745; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">+ Add New Provider</a></p>
-            
-            <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 20px;">
-                <tr style="background: #f8f9fa;">
-                    <th style="padding: 10px; text-align: left;">Provider ID</th>
-                    <th style="padding: 10px; text-align: left;">Name</th>
-                    <th style="padding: 10px; text-align: left;">Phone</th>
-                    <th style="padding: 10px; text-align: left;">Actions</th>
-                </tr>
-                {provider_rows}
-            </table>
-            
-            <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 5px;">
-                <h3>✅ Providers are now stored in the database!</h3>
-                <p>Changes will persist across deployments automatically. No need to manually commit to Git.</p>
-            </div>
-        </body>
-        </html>
-        """
+        db_status = f"✅ Database connected - {len(providers)} providers found"
+        db_color = "#d4edda"
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Database connection failed - show interface anyway
+        provider_rows = """
+        <tr>
+            <td colspan="4" style="text-align: center; padding: 20px; color: #856404; background: #fff3cd;">
+                Database temporarily unavailable. Provider data will load when connection is restored.
+            </td>
+        </tr>
+        """
+        db_status = f"⚠️ Database connection issue: {str(e)[:100]}..."
+        db_color = "#f8d7da"
+    
+    return f"""
+    <html>
+    <head><title>Manage Providers</title></head>
+    <body style="font-family: Arial; padding: 20px;">
+        <h2>Manage Providers</h2>
+        <p><a href="/providers/add" style="background: #28a745; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">+ Add New Provider</a></p>
+        
+        <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 20px;">
+            <tr style="background: #f8f9fa;">
+                <th style="padding: 10px; text-align: left;">Provider ID</th>
+                <th style="padding: 10px; text-align: left;">Name</th>
+                <th style="padding: 10px; text-align: left;">Phone</th>
+                <th style="padding: 10px; text-align: left;">Actions</th>
+            </tr>
+            {provider_rows}
+        </table>
+        
+        <div style="margin-top: 30px; padding: 15px; background: {db_color}; border-radius: 5px;">
+            <h3>Database Status</h3>
+            <p>{db_status}</p>
+            <p><small>Providers are stored in the database and changes persist across deployments.</small></p>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.route('/providers/edit/<provider_id>', methods=['GET', 'POST'])
 def edit_provider(provider_id):
