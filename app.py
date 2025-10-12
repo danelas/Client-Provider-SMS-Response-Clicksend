@@ -1378,20 +1378,15 @@ def check_customer_status(phone):
             'is_verified_customer': len(matching_bookings) > 0,
             'matching_bookings': matching_bookings,
             'total_bookings_in_db': len(all_bookings)
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/providers', methods=['GET'])
-def list_providers():
-    """List all providers"""
-    try:
-        providers = Provider.query.all()
-        provider_dict = {p.id: {'name': p.name, 'phone': p.phone} for p in providers}
-        return jsonify(provider_dict), 200
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/providers', methods=['GET'])
+@app.route('/providers/', methods=['GET'])
+def list_providers():
+    """List all providers - redirect to management interface"""
+    return redirect(url_for('manage_providers'))
 
 @app.route('/providers/add', methods=['POST', 'GET'])
 def add_provider():
