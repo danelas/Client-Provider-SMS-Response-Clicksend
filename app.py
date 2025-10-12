@@ -1391,8 +1391,6 @@ def list_providers():
 @app.route('/providers/add', methods=['POST', 'GET'])
 def add_provider():
     """Add a new provider"""
-    # Ensure database tables exist
-    db.create_all()
     
     if request.method == 'GET':
         # Show form
@@ -1462,8 +1460,6 @@ def add_provider():
 def manage_providers():
     """Provider management interface"""
     try:
-        # Ensure database tables exist
-        db.create_all()
         providers = Provider.query.all()
         
         provider_rows = ""
@@ -1512,8 +1508,6 @@ def manage_providers():
 def edit_provider(provider_id):
     """Edit an existing provider"""
     try:
-        # Ensure database tables exist
-        db.create_all()
         provider = Provider.query.get(provider_id)
         
         if not provider:
@@ -1576,8 +1570,6 @@ def edit_provider(provider_id):
 def delete_provider(provider_id):
     """Delete a provider"""
     try:
-        # Ensure database tables exist
-        db.create_all()
         
         # Query provider directly
         provider = Provider.query.filter_by(id=provider_id).first()
