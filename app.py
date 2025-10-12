@@ -30,11 +30,15 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 if database_url and 'postgresql://' in database_url:
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'connect_args': {
-            'sslmode': 'prefer',  # Changed from 'require' to 'prefer'
-            'connect_timeout': 30
+            'sslmode': 'prefer',
+            'connect_timeout': 10,
+            'application_name': 'goldtouch_app'
         },
         'pool_pre_ping': True,
-        'pool_recycle': 300
+        'pool_recycle': 300,
+        'pool_reset_on_return': 'commit',
+        'pool_size': 5,
+        'max_overflow': 10
     }
 
 print(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI'][:20]}...")
@@ -1548,10 +1552,26 @@ def manage_providers():
 def edit_provider(provider_id):
     """Edit an existing provider"""
     try:
+        # Debug: Show what we're looking for and what exists
+        all_providers = Provider.query.all()
+        provider_ids = [p.id for p in all_providers]
+        print(f"DEBUG: Looking for provider_id: '{provider_id}'")
+        print(f"DEBUG: Available provider IDs: {provider_ids}")
+        
         provider = Provider.query.get(provider_id)
         
         if not provider:
-            return jsonify({"error": "Provider not found"}), 404
+            return f"""
+            <html>
+            <head><title>Provider Not Found</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>❌ Provider Not Found</h2>
+                <p><strong>Looking for:</strong> '{provider_id}'</p>
+                <p><strong>Available providers:</strong> {', '.join(provider_ids) if provider_ids else 'None'}</p>
+                <p><a href="/providers/manage">Back to Manage Providers</a></p>
+            </body>
+            </html>
+            """
         
         if request.method == 'GET':
             # Show edit form
@@ -1610,12 +1630,27 @@ def edit_provider(provider_id):
 def delete_provider(provider_id):
     """Delete a provider"""
     try:
+        # Debug: Show what we're looking for and what exists
+        all_providers = Provider.query.all()
+        provider_ids = [p.id for p in all_providers]
+        print(f"DEBUG DELETE: Looking for provider_id: '{provider_id}'")
+        print(f"DEBUG DELETE: Available provider IDs: {provider_ids}")
         
         # Query provider directly
         provider = Provider.query.filter_by(id=provider_id).first()
         
         if not provider:
-            return jsonify({"error": "Provider not found"}), 404
+            return f"""
+            <html>
+            <head><title>Provider Not Found</title></head>
+            <body style="font-family: Arial; padding: 20px;">
+                <h2>❌ Provider Not Found</h2>
+                <p><strong>Looking for:</strong> '{provider_id}'</p>
+                <p><strong>Available providers:</strong> {', '.join(provider_ids) if provider_ids else 'None'}</p>
+                <p><a href="/providers/manage">Back to Manage Providers</a></p>
+            </body>
+            </html>
+            """
         
         # Store provider info before deletion
         deleted_name = provider.name
