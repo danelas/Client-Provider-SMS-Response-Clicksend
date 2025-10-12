@@ -42,39 +42,8 @@ print(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI'][:20]}...")
 # Initialize database
 db.init_app(app)
 
-# Create tables and migrate existing providers
-with app.app_context():
-    db.create_all()
-    
-    # Migrate existing providers from JSON to database (one-time migration)
-    try:
-        # Check if we have any providers in the database already
-        existing_count = Provider.query.count()
-        
-        if existing_count == 0 and PROVIDERS_FILE.exists():
-            print("Migrating providers from JSON file to database...")
-            with open(PROVIDERS_FILE, 'r') as f:
-                json_providers = json.load(f)
-            
-            for provider_id, provider_data in json_providers.items():
-                # Check if provider already exists
-                if not Provider.query.get(provider_id):
-                    new_provider = Provider(
-                        id=provider_id,
-                        name=provider_data.get('name', ''),
-                        phone=provider_data.get('phone', '')
-                    )
-                    db.session.add(new_provider)
-            
-            db.session.commit()
-            migrated_count = Provider.query.count()
-            print(f"Successfully migrated {migrated_count} providers to database")
-        else:
-            print(f"Database already has {existing_count} providers, skipping migration")
-            
-    except Exception as e:
-        print(f"Error during provider migration: {str(e)}")
-        db.session.rollback()
+# Database tables will be created automatically when first accessed
+# Removed startup db.create_all() to prevent app crashes on database connection issues
 
 # Background scheduler will be initialized after function definitions
 
