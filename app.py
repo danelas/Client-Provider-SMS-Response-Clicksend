@@ -1566,7 +1566,18 @@ def edit_provider(provider_id):
         print(f"DEBUG: Decoded provider_id: '{decoded_id}'")
         print(f"DEBUG: Available provider IDs: {provider_ids}")
         
+        # Query provider directly - try exact match first, then with trailing space
         provider = Provider.query.get(decoded_id)
+        if not provider:
+            # Try with trailing space
+            provider = Provider.query.get(decoded_id + ' ')
+        if not provider:
+            # Try trimming spaces from database IDs
+            all_providers_exact = Provider.query.all()
+            for p in all_providers_exact:
+                if p.id.strip() == decoded_id.strip():
+                    provider = p
+                    break
         
         if not provider:
             return f"""
@@ -1649,8 +1660,18 @@ def delete_provider(provider_id):
         print(f"DEBUG DELETE: Decoded provider_id: '{decoded_id}'")
         print(f"DEBUG DELETE: Available provider IDs: {provider_ids}")
         
-        # Query provider directly
+        # Query provider directly - try exact match first, then with trailing space
         provider = Provider.query.filter_by(id=decoded_id).first()
+        if not provider:
+            # Try with trailing space
+            provider = Provider.query.filter_by(id=decoded_id + ' ').first()
+        if not provider:
+            # Try trimming spaces from database IDs
+            all_providers_exact = Provider.query.all()
+            for p in all_providers_exact:
+                if p.id.strip() == decoded_id.strip():
+                    provider = p
+                    break
         
         if not provider:
             return f"""
