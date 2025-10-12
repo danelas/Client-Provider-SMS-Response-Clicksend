@@ -1496,14 +1496,17 @@ def manage_providers():
         providers = Provider.query.all()
         provider_rows = ""
         for provider in providers:
+            # URL encode the provider ID to handle spaces and special characters
+            from urllib.parse import quote
+            encoded_id = quote(provider.id.strip())
             provider_rows += f"""
             <tr>
                 <td>{provider.id}</td>
                 <td>{provider.name}</td>
                 <td>{provider.phone}</td>
                 <td>
-                    <a href="/providers/edit/{provider.id}" style="color: #007cba;">Edit</a> | 
-                    <a href="/providers/delete/{provider.id}" style="color: #d63384;" onclick="return confirm('Delete {provider.name}?')">Delete</a>
+                    <a href="/providers/edit/{encoded_id}" style="color: #007cba;">Edit</a> | 
+                    <a href="/providers/delete/{encoded_id}" style="color: #d63384;" onclick="return confirm('Delete {provider.name}?')">Delete</a>
                 </td>
             </tr>
             """
@@ -1552,13 +1555,18 @@ def manage_providers():
 def edit_provider(provider_id):
     """Edit an existing provider"""
     try:
+        # URL decode the provider ID to handle spaces and special characters
+        from urllib.parse import unquote
+        decoded_id = unquote(provider_id)
+        
         # Debug: Show what we're looking for and what exists
         all_providers = Provider.query.all()
         provider_ids = [p.id for p in all_providers]
-        print(f"DEBUG: Looking for provider_id: '{provider_id}'")
+        print(f"DEBUG: URL provider_id: '{provider_id}'")
+        print(f"DEBUG: Decoded provider_id: '{decoded_id}'")
         print(f"DEBUG: Available provider IDs: {provider_ids}")
         
-        provider = Provider.query.get(provider_id)
+        provider = Provider.query.get(decoded_id)
         
         if not provider:
             return f"""
@@ -1630,14 +1638,19 @@ def edit_provider(provider_id):
 def delete_provider(provider_id):
     """Delete a provider"""
     try:
+        # URL decode the provider ID to handle spaces and special characters
+        from urllib.parse import unquote
+        decoded_id = unquote(provider_id)
+        
         # Debug: Show what we're looking for and what exists
         all_providers = Provider.query.all()
         provider_ids = [p.id for p in all_providers]
-        print(f"DEBUG DELETE: Looking for provider_id: '{provider_id}'")
+        print(f"DEBUG DELETE: URL provider_id: '{provider_id}'")
+        print(f"DEBUG DELETE: Decoded provider_id: '{decoded_id}'")
         print(f"DEBUG DELETE: Available provider IDs: {provider_ids}")
         
         # Query provider directly
-        provider = Provider.query.filter_by(id=provider_id).first()
+        provider = Provider.query.filter_by(id=decoded_id).first()
         
         if not provider:
             return f"""
