@@ -30,13 +30,16 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 if database_url and 'postgresql://' in database_url:
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'connect_args': {
-            'sslmode': 'prefer',  # Changed from 'require' to 'prefer'
+            'sslmode': 'require',
             'sslcert': None,
             'sslkey': None,
-            'sslrootcert': None
+            'sslrootcert': None,
+            'connect_timeout': 30
         },
-        'pool_pre_ping': True,  # Test connections before use
-        'pool_recycle': 300     # Recycle connections every 5 minutes
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'pool_timeout': 20,
+        'max_overflow': 0
     }
 
 print(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI'][:20]}...")
