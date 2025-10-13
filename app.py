@@ -1300,6 +1300,7 @@ def sms_webhook():
                     print(f"✗ FAILED to send confirmation to provider: {msg}")
             
             # Call Stripe checkout when provider accepts
+            payment_link = None
             try:
                 import requests
                 stripe_payload = {
@@ -1321,21 +1322,36 @@ def sms_webhook():
                 if stripe_response.status_code == 200:
                     print(f"✓ Stripe checkout initiated successfully")
                     print(f"Stripe response: {stripe_response.text}")
+                    
+                    # Try to extract payment link from response
+                    try:
+                        stripe_data = stripe_response.json()
+                        payment_link = stripe_data.get('checkout_url') or stripe_data.get('payment_link') or stripe_data.get('url')
+                        if payment_link:
+                            print(f"✓ Payment link received: {payment_link}")
+                        else:
+                            print(f"⚠️ No payment link found in Stripe response")
+                    except Exception as json_error:
+                        print(f"⚠️ Could not parse Stripe response as JSON: {json_error}")
                 else:
                     print(f"✗ Stripe checkout failed: {stripe_response.status_code} - {stripe_response.text}")
                     
             except Exception as stripe_error:
                 print(f"✗ Error calling Stripe checkout: {str(stripe_error)}")
             
-            # Send confirmation to customer
+            # Send confirmation to customer with payment link if available
             provider_name = provider.get('name', 'the provider') if provider else 'the provider'
             add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
+            
+            # Add payment link to message if available
+            payment_info = f"\n\n💳 Complete your payment: {payment_link}" if payment_link else "\n\nPayment details will be sent separately."
+            
             customer_message = (
                 f"Your booking with {provider_name} has been confirmed!\n\n"
                 f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
                 f"When: {appointment_time}\n"
                 f"Address: {booking.address or 'Not specified'}\n\n"
-                "The provider will contact you shortly."
+                f"The provider will contact you shortly.{payment_info}"
             )
             
             success, msg = send_sms(booking.customer_phone, customer_message)
