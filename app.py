@@ -831,13 +831,13 @@ def create_booking():
             
             if is_in_studio:
                 message = (
-                    f"Hey {provider['name']}, New Request: {data['service_type']} "
+                    f"Gold Touch Mobile - Hey {provider['name']}, New Request: {data['service_type']} "
                     f"on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
-                    f"Hey {provider['name']}, New Request: {data['service_type']} "
+                    f"Gold Touch Mobile - Hey {provider['name']}, New Request: {data['service_type']} "
                     f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
@@ -918,7 +918,7 @@ def confirm_booking_manual(booking_id):
         # Send confirmation to customer
         add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
         customer_message = (
-            f"Your booking with {provider_name} has been confirmed!\n\n"
+            f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
             f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
             f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}\n\n"
@@ -1375,11 +1375,11 @@ def sms_webhook():
             payment_info = f"\n\n💳 Complete your payment: {payment_link}" if payment_link else "\n\nPayment details will be sent separately."
             
             customer_message = (
-                f"Your booking with {provider_name} has been confirmed!\n\n"
+                f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
                 f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
                 f"When: {appointment_time}\n"
                 f"Address: {booking.address or 'Not specified'}\n\n"
-                f"The provider will contact you shortly.{payment_info}"
+                f"The provider will contact you shortly."
             )
             
             success, msg = send_sms(booking.customer_phone, customer_message)
@@ -1821,7 +1821,7 @@ def debug_webhook():
         )
         
         customer_message = (
-            f"Your booking with {provider_name} has been confirmed!\n\n"
+            f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
             f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
             f"When: {appointment_time}\n"
             f"Address: {booking.address or 'Not specified'}\n\n"
