@@ -1299,6 +1299,34 @@ def sms_webhook():
                 else:
                     print(f"✗ FAILED to send confirmation to provider: {msg}")
             
+            # Call Stripe checkout when provider accepts
+            try:
+                import requests
+                stripe_payload = {
+                    'providerId': booking.provider_id,
+                    'serviceName': booking.service_type or 'Service',
+                    'customerPhone': booking.customer_phone,
+                    'customerName': customer_name or 'Customer'
+                }
+                
+                print(f"=== CALLING STRIPE CHECKOUT ===")
+                print(f"Stripe payload: {stripe_payload}")
+                
+                stripe_response = requests.post(
+                    'https://stripe-45lh.onrender.com/checkout-with-sms',
+                    json=stripe_payload,
+                    timeout=10
+                )
+                
+                if stripe_response.status_code == 200:
+                    print(f"✓ Stripe checkout initiated successfully")
+                    print(f"Stripe response: {stripe_response.text}")
+                else:
+                    print(f"✗ Stripe checkout failed: {stripe_response.status_code} - {stripe_response.text}")
+                    
+            except Exception as stripe_error:
+                print(f"✗ Error calling Stripe checkout: {str(stripe_error)}")
+            
             # Send confirmation to customer
             provider_name = provider.get('name', 'the provider') if provider else 'the provider'
             add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
