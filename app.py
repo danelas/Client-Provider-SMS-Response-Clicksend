@@ -763,7 +763,7 @@ def create_booking():
                     provider_phone=provider['phone'],  # Add provider's phone number
                     provider_id=data['provider_id'],
                     service_type=data['service_type'],
-                    add_ons=data.get('add', ''),  # Store add-ons from form field 'add'
+                    add_ons=data.get('add', '') or data.get('Add-on / Specialty Treatments', '') or data.get('addon', '') or data.get('addons', ''),  # Store add-ons from multiple possible field names
                     address=data.get('address', ''),
                     appointment_time=appointment_dt,  # Now properly in UTC
                     status='pending',
@@ -826,7 +826,7 @@ def create_booking():
             short_notice_line = "\n$20 Short-Notice Bonus" if is_last_minute else ""
             
             # Add add-ons line if present
-            add_ons_text = data.get('add', '').strip()
+            add_ons_text = (data.get('add', '') or data.get('Add-on / Specialty Treatments', '') or data.get('addon', '') or data.get('addons', '')).strip()
             add_ons_line = f"\nAdd-ons: {add_ons_text}" if add_ons_text else ""
             
             if is_in_studio:
