@@ -2832,9 +2832,47 @@ def test_welcome_sms():
         import traceback
         traceback.print_exc()
         return jsonify({
-            "status": "error",
             "message": f"Test failed: {str(e)}",
             "error_type": type(e).__name__
+        }), 500
+
+@app.route('/api/send-payment-sms', methods=['POST'])
+def send_payment_sms():
+    """Send payment SMS using TextMagic"""
+    try:
+        # Get phone and message from request
+        data = request.get_json()
+        if not data:
+            data = request.form
+        
+        phone = data.get('phone')
+        message = data.get('message')
+        
+        if not phone or not message:
+            return jsonify({
+                'success': False,
+                'error': 'Phone and message are required'
+            }), 400
+        
+        # Use existing TextMagic SMS function
+        success, result = send_sms(phone, message)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'SMS sent successfully',
+                'result': result
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to send SMS: {result}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}'
         }), 500
 
 @app.route('/check-all-providers', methods=['GET'])
