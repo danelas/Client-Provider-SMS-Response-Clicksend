@@ -1380,6 +1380,7 @@ def sms_webhook():
                 f"When: {appointment_time}\n"
                 f"Address: {booking.address or 'Not specified'}\n\n"
                 f"The provider will contact you shortly."
+                f"{payment_info}"  # ✅ NOW INCLUDES THE PAYMENT LINK!
             )
             
             success, msg = send_sms(booking.customer_phone, customer_message)
@@ -1400,7 +1401,7 @@ def sms_webhook():
             
             # Send rejection message to customer
             alt_message = (
-                "The provider you selected isn't available at this time, but you can easily choose another provider here: goldtouchmobile.com. "
+                "The provider you selected isn't available at this time, but you can easily choose another provider here: https://goldtouchmobile.com. "
                 "We appreciate your understanding and look forward to serving you."
             )
             success, msg = send_sms(booking.customer_phone, alt_message)
