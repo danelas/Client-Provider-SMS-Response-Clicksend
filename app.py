@@ -1307,35 +1307,16 @@ def sms_webhook():
                 # Get provider name for Stripe payload
                 provider_name = provider.get('name', 'Provider') if provider else 'Provider'
                 
-                # Calculate amount based on service type (using Gold Touch pricing)
+                # Use service name for dynamic pricing lookup (Stripe service will find correct price)
                 service_type = booking.service_type or 'Service'
-                amount_cents = 15000  # Default $150
-                
-                # Basic pricing lookup based on service type
-                if '60 min Mobile' in service_type:
-                    amount_cents = 15000  # $150
-                elif '90 min Mobile' in service_type:
-                    amount_cents = 20000  # $200
-                elif '60 min In-Studio' in service_type:
-                    amount_cents = 12000  # $120
-                elif '90 min In-Studio' in service_type:
-                    amount_cents = 17000  # $170
-                elif 'Reflexology' in service_type:
-                    amount_cents = 15000  # $150
-                elif 'Facial' in service_type:
-                    amount_cents = 10000  # $100
-                elif 'Bridal Makeup' in service_type:
-                    amount_cents = 24000  # $240
-                elif 'Acupuncture 60min' in service_type:
-                    amount_cents = 14000  # $140
                 
                 stripe_payload = {
                     'providerId': booking.provider_id,
-                    'productName': service_type,
-                    'amountCents': amount_cents,
+                    'serviceName': service_type,  # Let Stripe service look up pricing
                     'customerPhone': booking.customer_phone,
                     'customerName': customer_name or 'Customer',
                     'providerName': provider_name
+                    # Removed amountCents - let Stripe service calculate from serviceName
                 }
                 
                 print(f"=== CALLING STRIPE CHECKOUT ===")
