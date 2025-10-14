@@ -109,9 +109,15 @@ def mass_send_connect_links(test_mode=False, specific_providers=None):
                 print(f"📊 Found {len(db_providers)} providers in database")
                 for p in db_providers:
                     providers_dict[p.id] = {'name': p.name, 'phone': p.phone}
-            else:
-                print("⚠️ No providers found in database, loading from JSON...")
-                providers_dict = load_providers_from_json()
+            
+            # Always also load from JSON to get any missing providers
+            json_providers = load_providers_from_json()
+            if json_providers:
+                print(f"📊 Found {len(json_providers)} providers in JSON file")
+                # Merge JSON providers (JSON takes precedence for conflicts)
+                for pid, pinfo in json_providers.items():
+                    providers_dict[pid] = pinfo
+                print(f"📊 Total providers after merge: {len(providers_dict)}")
             
             if not providers_dict:
                 print("❌ No providers found in database or JSON file!")
