@@ -1322,8 +1322,9 @@ def sms_webhook():
                 print(f"=== CALLING STRIPE CHECKOUT ===")
                 print(f"Stripe payload: {stripe_payload}")
                 
+                # Use regular checkout with fuzzy matching for service names
                 stripe_response = requests.post(
-                    'https://stripe-45lh.onrender.com/checkout-with-sms',
+                    'https://stripe-45lh.onrender.com/checkout',
                     json=stripe_payload,
                     timeout=10
                 )
