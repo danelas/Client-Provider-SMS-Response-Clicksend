@@ -13,10 +13,11 @@ from dotenv import load_dotenv
 
 # Add the app directory to Python path to import from app.py
 sys.path.append(str(Path(__file__).parent))
-from app import send_sms, Provider, app, db
 
 # Load environment variables
 load_dotenv()
+
+from app import send_sms, Provider, app, db
 
 def generate_provider_connect_link(provider_id):
     """Generate Stripe Connect onboarding link for a specific provider"""
