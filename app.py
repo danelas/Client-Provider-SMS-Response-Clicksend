@@ -1354,7 +1354,7 @@ def sms_webhook():
             add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
             
             # Add payment link to message if available
-            payment_info = f"\n\n💳 Complete your payment: {payment_link}" if payment_link else "\n\nPayment details will be sent separately."
+            payment_info = f"\n\n💳 Pay after your service: {payment_link}" if payment_link else "\n\nPayment details will be sent separately."
             
             customer_message = (
                 f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
