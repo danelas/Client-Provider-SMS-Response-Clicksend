@@ -3278,6 +3278,155 @@ def admin_customer_stats():
             'message': str(e)
         }), 500
 
+@app.route('/test-connect/<provider_id>', methods=['GET'])
+def test_connect_link(provider_id):
+    """Test endpoint to generate and optionally send Connect links"""
+    try:
+        import requests
+        
+        # Get provider info from database
+        provider = Provider.query.filter_by(id=provider_id).first()
+        if not provider:
+            return jsonify({
+                "error": f"Provider {provider_id} not found in database",
+                "status": "failed"
+            }), 404
+        
+        print(f"🔗 Testing Connect link generation for {provider.name} ({provider_id})")
+        
+        # Generate Connect link via external service
+        response = requests.post(
+            'https://stripe-45lh.onrender.com/provider/account-link',
+            json={'providerId': provider_id},
+            timeout=20
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Extract URL from nested response
+            connect_url = None
+            account_id = None
+            
+            if 'url' in data and isinstance(data['url'], dict):
+                connect_url = data['url'].get('url')
+                account_id = data['url'].get('account_id')
+            
+            if connect_url:
+                # Prepare SMS message
+                message = (
+                    f"Gold Touch Mobile - Hi {provider.name}! 👋\n\n"
+                    f"We're migrating to Stripe for faster payments! Clients will now pay at the end of service with same-day payouts to you.\n\n"
+                    f"Complete your payment setup here:\n"
+                    f"{connect_url}\n\n"
+                    f"This secure link sets up your Stripe account for direct deposits. Questions? Reply to this message."
+                )
+                
+                return f"""
+                <html>
+                <head><title>Connect Link Test - {provider.name}</title></head>
+                <body style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>✅ Connect Link Generated Successfully!</h2>
+                    <p><strong>Provider:</strong> {provider.name} ({provider_id})</p>
+                    <p><strong>Phone:</strong> {provider.phone}</p>
+                    <p><strong>Account ID:</strong> {account_id}</p>
+                    <p><strong>Connect URL:</strong> <a href="{connect_url}" target="_blank">{connect_url}</a></p>
+                    
+                    <h3>SMS Message Preview:</h3>
+                    <div style="border: 1px solid #ccc; padding: 15px; background: #f9f9f9; white-space: pre-line;">
+{message}
+                    </div>
+                    
+                    <h3>Actions:</h3>
+                    <p>
+                        <a href="/test-connect/{provider_id}/send" style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">📱 Send SMS Now</a>
+                        <a href="/providers/manage" style="background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-left: 10px;">👥 Back to Providers</a>
+                    </p>
+                    
+                    <h3>Raw Response:</h3>
+                    <pre style="background: #f0f0f0; padding: 10px; overflow-x: auto;">{response.text}</pre>
+                </body>
+                </html>
+                """
+            else:
+                return jsonify({
+                    "error": "Connect link generated but no URL found",
+                    "response": data,
+                    "status": "partial_success"
+                }), 200
+        else:
+            return jsonify({
+                "error": f"Failed to generate Connect link: {response.status_code}",
+                "response": response.text,
+                "status": "failed"
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            "error": f"Error testing Connect link: {str(e)}",
+            "status": "error"
+        }), 500
+
+@app.route('/test-connect/<provider_id>/send', methods=['GET'])
+def test_connect_send(provider_id):
+    """Actually send the Connect link SMS to the provider"""
+    try:
+        import requests
+        
+        # Get provider info
+        provider = Provider.query.filter_by(id=provider_id).first()
+        if not provider:
+            return jsonify({"error": f"Provider {provider_id} not found"}), 404
+        
+        # Generate Connect link
+        response = requests.post(
+            'https://stripe-45lh.onrender.com/provider/account-link',
+            json={'providerId': provider_id},
+            timeout=20
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if 'url' in data and isinstance(data['url'], dict):
+                connect_url = data['url'].get('url')
+                account_id = data['url'].get('account_id')
+                
+                if connect_url:
+                    # Send SMS
+                    message = (
+                        f"Gold Touch Mobile - Hi {provider.name}! 👋\n\n"
+                        f"We're migrating to Stripe for faster payments! Clients will now pay at the end of service with same-day payouts to you.\n\n"
+                        f"Complete your payment setup here:\n"
+                        f"{connect_url}\n\n"
+                        f"This secure link sets up your Stripe account for direct deposits. Questions? Reply to this message."
+                    )
+                    
+                    success, msg = send_sms(provider.phone, message)
+                    
+                    if success:
+                        return f"""
+                        <html>
+                        <head><title>SMS Sent - {provider.name}</title></head>
+                        <body style="font-family: Arial, sans-serif; padding: 20px;">
+                            <h2>✅ SMS Sent Successfully!</h2>
+                            <p><strong>Provider:</strong> {provider.name} ({provider_id})</p>
+                            <p><strong>Phone:</strong> {provider.phone}</p>
+                            <p><strong>Account ID:</strong> {account_id}</p>
+                            <p><strong>SMS Status:</strong> {msg}</p>
+                            
+                            <p><a href="/providers/manage" style="background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">👥 Back to Providers</a></p>
+                        </body>
+                        </html>
+                        """
+                    else:
+                        return f"<h2>❌ SMS Failed</h2><p>Error: {msg}</p><p><a href='/providers/manage'>Back to Providers</a></p>"
+        
+        return "<h2>❌ Failed to generate Connect link</h2><p><a href='/providers/manage'>Back to Providers</a></p>"
+        
+    except Exception as e:
+        return f"<h2>❌ Error</h2><p>{str(e)}</p><p><a href='/providers/manage'>Back to Providers</a></p>"
+
 if __name__ == '__main__':
     # Run the app (background tasks already started above)
     port = int(os.environ.get('PORT', 5000))
