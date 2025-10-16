@@ -4,9 +4,11 @@ import base64
 import json
 import re
 import requests
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 from models import db, Booking, Provider, MessageLog
+from stripe_service_integration import stripe_service
 from datetime import datetime, timedelta
 import pytz
 import openai
@@ -66,6 +68,17 @@ if OPENAI_API_KEY:
     print("OpenAI API configured")
 else:
     print("Warning: OPENAI_API_KEY not set - AI customer support disabled")
+
+# Stripe Service Integration
+STRIPE_SERVICE_URL = os.getenv('STRIPE_SERVICE_URL', 'http://localhost:3000')
+print(f"Stripe Service URL: {STRIPE_SERVICE_URL}")
+
+# Test connection to Stripe service
+healthy, status = stripe_service.check_service_health()
+if healthy:
+    print("✅ Stripe service connection successful")
+else:
+    print(f"⚠️ Stripe service connection failed: {status}")
 
 # Load provider data
 PROVIDERS_FILE = Path(__file__).parent / 'providers.json'
@@ -565,6 +578,61 @@ def send_sms(to_number, message, from_number=None):
     finally:
         print("=== SEND_SMS COMPLETED ===\n")
 
+# ===== LEAD UNLOCK SYSTEM (Node.js Service Integration) =====
+
+def generate_lead_id():
+    """Generate a unique lead ID"""
+    return f"lead_{uuid.uuid4().hex[:8]}"
+
+def process_lead_unlock_response(provider_phone, message_content):
+    """Process provider response to lead unlock teaser via Node.js service"""
+    try:
+        # Forward the SMS response to the Node.js service for processing
+        success, result = stripe_service.handle_sms_response(provider_phone, message_content)
+        
+        if success:
+            print(f"✓ Lead unlock response processed by Node.js service: {result}")
+            return True, result.get('message', 'Response processed successfully')
+        else:
+            print(f"⚠️ Node.js service failed to process response: {result}")
+            return False, result
+            
+    except Exception as e:
+        print(f"Error processing lead unlock response: {str(e)}")
+        return False, "Error processing response"
+
+def create_lead_via_service(lead_data, provider_ids=None):
+    """Create a lead using the Node.js service"""
+    try:
+        success, result = stripe_service.create_lead(lead_data, provider_ids)
+        
+        if success:
+            print(f"✓ Lead created via Node.js service: {result}")
+            return True, result
+        else:
+            print(f"⚠️ Failed to create lead via Node.js service: {result}")
+            return False, result
+            
+    except Exception as e:
+        print(f"Error creating lead via service: {str(e)}")
+        return False, str(e)
+
+def send_lead_to_providers_via_service(lead_id, provider_ids):
+    """Send lead to providers using the Node.js service"""
+    try:
+        success, result = stripe_service.send_lead_to_providers(lead_id, provider_ids)
+        
+        if success:
+            print(f"✓ Lead sent to providers via Node.js service: {result}")
+            return True, result
+        else:
+            print(f"⚠️ Failed to send lead via Node.js service: {result}")
+            return False, result
+            
+    except Exception as e:
+        print(f"Error sending lead via service: {str(e)}")
+        return False, str(e)
+
 @app.route('/api/booking', methods=['POST'])
 def create_booking():
     """Handle form submission and send SMS to provider"""
@@ -636,6 +704,37 @@ def create_booking():
         print("\n=== RECEIVED DATA ===")
         for key, value in data.items():
             print(f"{key}: {value} (type: {type(value)})")
+        print("===================\n")
+        
+        # Map FluentForm field names to internal field names
+        field_mapping = {
+            'name': 'customer_name',
+            'phone': 'customer_phone', 
+            'cityzip': 'city_zip',
+            'date_time': 'datetime',
+            'length': 'session_length',
+            'type': 'service_type',
+            'location': 'location_type',
+            'contactpref': 'contact_preference'
+        }
+        
+        # Apply field mapping
+        mapped_data = {}
+        for form_field, internal_field in field_mapping.items():
+            if form_field in data:
+                mapped_data[internal_field] = data[form_field]
+                print(f"Mapped: {form_field} → {internal_field} = {data[form_field]}")
+        
+        # Keep any unmapped fields
+        for key, value in data.items():
+            if key not in field_mapping:
+                mapped_data[key] = value
+        
+        # Update data with mapped fields
+        data = mapped_data
+        print(f"\n=== MAPPED DATA ===")
+        for key, value in data.items():
+            print(f"{key}: {value}")
         print("===================\n")
         
         # Check database connection with retry logic
@@ -750,7 +849,9 @@ def create_booking():
             
             # Extract customer name from form data (handling both direct and nested formats)
             customer_name = ''
-            if 'name' in data:
+            if 'customer_name' in data:
+                customer_name = data['customer_name']
+            elif 'name' in data:
                 customer_name = data['name']
             elif 'names' in data and isinstance(data['names'], dict) and 'First Name' in data['names']:
                 customer_name = data['names']['First Name']
@@ -766,6 +867,11 @@ def create_booking():
                     add_ons=data.get('add', '') or data.get('Add-on / Specialty Treatments', '') or data.get('addon', '') or data.get('addons', ''),  # Store add-ons from multiple possible field names
                     address=data.get('address', ''),
                     appointment_time=appointment_dt,  # Now properly in UTC
+                    # New fields from form field definitions
+                    city_zip=data.get('city_zip', ''),
+                    session_length=data.get('session_length', ''),
+                    location_type=data.get('location_type', ''),
+                    contact_preference=data.get('contact_preference', ''),
                     status='pending',
                     response_deadline=response_deadline
                 )
@@ -829,16 +935,24 @@ def create_booking():
             add_ons_text = (data.get('add', '') or data.get('Add-on / Specialty Treatments', '') or data.get('addon', '') or data.get('addons', '')).strip()
             add_ons_line = f"\nAdd-ons: {add_ons_text}" if add_ons_text else ""
             
+            # Add session length if specified
+            session_length_text = data.get('session_length', '').strip()
+            session_length_line = f"\nLength: {session_length_text}" if session_length_text else ""
+            
+            # Add city/zip if specified and different from address
+            city_zip_text = data.get('city_zip', '').strip()
+            city_zip_line = f"\nArea: {city_zip_text}" if city_zip_text and not is_in_studio else ""
+            
             if is_in_studio:
                 message = (
                     f"Gold Touch Mobile - Hey {provider['name']}, New Request: {data['service_type']} "
-                    f"on {formatted_time}.{add_ons_line}{short_notice_line}"
+                    f"on {formatted_time}.{session_length_line}{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             else:
                 message = (
                     f"Gold Touch Mobile - Hey {provider['name']}, New Request: {data['service_type']} "
-                    f"at {data['address']} on {formatted_time}.{add_ons_line}{short_notice_line}"
+                    f"at {data['address']} on {formatted_time}.{session_length_line}{city_zip_line}{add_ons_line}{short_notice_line}"
                     f"\n\nReply Y to ACCEPT or N to DECLINE"
                 )
             
@@ -915,19 +1029,9 @@ def confirm_booking_manual(booking_id):
         if not success:
             print(f"Failed to send confirmation to provider: {msg}")
         
-        # Send confirmation to customer
-        add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
-        customer_message = (
-            f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
-            f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
-            f"When: {appointment_time}\n"
-            f"Address: {booking.address or 'Not specified'}\n\n"
-            "The provider will contact you shortly."
-        )
-        
-        success, msg = send_sms(booking.customer_phone, customer_message)
-        if not success:
-            print(f"Failed to send confirmation to customer: {msg}")
+        # LEAD SYSTEM: No customer confirmation SMS needed
+        # Provider will contact customer directly after receiving their contact details
+        print(f"✓ Lead system: No customer confirmation SMS sent - provider will contact directly")
         
         add_ons_display = f"<p>Add-ons: {booking.add_ons}</p>" if booking.add_ons and booking.add_ons.strip() else ""
         return f"""
@@ -1050,6 +1154,18 @@ def sms_webhook():
         if any(keyword in text.lower() for keyword in reaction_keywords):
             print(f"Ignoring iPhone reaction: '{text}'")
             return jsonify({"status": "ok"}), 200
+        
+        # Check if this is a lead unlock response (contains "lead" keyword)
+        if 'lead' in text.lower():
+            print(f"🔓 Potential lead unlock response detected: '{text}'")
+            success, message = process_lead_unlock_response(from_number, text)
+            
+            if success:
+                print(f"✓ Lead unlock response processed: {message}")
+                return jsonify({"status": "ok"}), 200
+            else:
+                print(f"⚠️ Lead unlock processing failed: {message}")
+                # Continue to regular processing if lead unlock fails
         
         # First, check if this message is from a provider with a pending booking
         provider_phone_normalized = from_number.replace('+', '').replace('-', '').replace(' ', '')
@@ -1349,28 +1465,9 @@ def sms_webhook():
             except Exception as stripe_error:
                 print(f"✗ Error calling Stripe checkout: {str(stripe_error)}")
             
-            # Send confirmation to customer with payment link if available
-            provider_name = provider.get('name', 'the provider') if provider else 'the provider'
-            add_ons_info = f"\nAdd-ons: {booking.add_ons}" if booking.add_ons and booking.add_ons.strip() else ""
-            
-            # Add payment link to message if available
-            payment_info = f"\n\n💳 Pay after your service: {payment_link}" if payment_link else "\n\nPayment details will be sent separately."
-            
-            customer_message = (
-                f"Gold Touch Mobile - Your booking with {provider_name} has been confirmed!\n\n"
-                f"Service: {booking.service_type or 'Not specified'}{add_ons_info}\n"
-                f"When: {appointment_time}\n"
-                f"Address: {booking.address or 'Not specified'}\n\n"
-                f"The provider will contact you shortly."
-                f"{payment_info}"  # ✅ NOW INCLUDES THE PAYMENT LINK!
-            )
-            
-            success, msg = send_sms(booking.customer_phone, customer_message)
-            if success:
-                print(f"✓ Successfully sent confirmation to customer: {msg}")
-            else:
-                print(f"✗ FAILED to send confirmation to customer: {msg}")
-            
+            # LEAD SYSTEM: No customer confirmation SMS needed
+            # Provider will contact customer directly after receiving their contact details
+            print(f"✓ Lead system: No customer confirmation SMS sent - provider will contact directly")
             print(f"Booking {booking.id} confirmed successfully")
             
         elif response_type == 'n':
@@ -3426,6 +3523,155 @@ def test_connect_send(provider_id):
         
     except Exception as e:
         return f"<h2>❌ Error</h2><p>{str(e)}</p><p><a href='/providers/manage'>Back to Providers</a></p>"
+
+# ===== LEAD UNLOCK API ENDPOINTS (Node.js Service Integration) =====
+
+@app.route('/api/leads', methods=['POST'])
+def create_lead():
+    """Create a new lead via Node.js service"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['city', 'service_type', 'client_name', 'client_phone', 'exact_address']
+        missing_fields = [field for field in required_fields if field not in data or not data[field]]
+        
+        if missing_fields:
+            return jsonify({
+                "status": "error", 
+                "message": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
+        
+        # Generate lead ID if not provided
+        if 'id' not in data:
+            data['id'] = generate_lead_id()
+        
+        # Clean phone number
+        data['client_phone'] = clean_phone_number(data['client_phone'])
+        
+        # Extract provider IDs
+        provider_ids = data.pop('provider_ids', [])
+        
+        # Create lead via Node.js service
+        success, result = create_lead_via_service(data, provider_ids)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "result": result
+            }), 201
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result
+            }), 500
+        
+    except Exception as e:
+        print(f"Error creating lead: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/leads/<lead_id>', methods=['GET'])
+def get_lead(lead_id):
+    """Get lead details from Node.js service"""
+    try:
+        success, result = stripe_service.get_lead_status(lead_id)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "lead": result
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result
+            }), 404
+        
+    except Exception as e:
+        print(f"Error getting lead: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/leads/<lead_id>/send', methods=['POST'])
+def send_lead_to_providers(lead_id):
+    """Send existing lead to additional providers via Node.js service"""
+    try:
+        data = request.get_json()
+        
+        if 'provider_ids' not in data or not data['provider_ids']:
+            return jsonify({"status": "error", "message": "No provider IDs provided"}), 400
+        
+        success, result = send_lead_to_providers_via_service(lead_id, data['provider_ids'])
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "result": result
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result
+            }), 500
+        
+    except Exception as e:
+        print(f"Error sending lead to providers: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/stripe-service/health', methods=['GET'])
+def check_stripe_service_health():
+    """Check health of the Node.js Stripe service"""
+    try:
+        healthy, status = stripe_service.check_service_health()
+        
+        return jsonify({
+            "status": "success" if healthy else "error",
+            "stripe_service_healthy": healthy,
+            "stripe_service_status": status
+        }), 200 if healthy else 503
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/providers/list', methods=['GET'])
+def list_providers():
+    """Export all providers with booking URLs for easy copy-paste"""
+    try:
+        providers = Provider.query.all()
+        
+        provider_data = {}
+        booking_urls = []
+        
+        for p in providers:
+            # URL encode the name and phone
+            encoded_name = p.name.replace(' ', '%20') if p.name else ''
+            encoded_phone = p.phone.replace('+', '%2B') if p.phone else ''
+            
+            booking_url = f'https://goldtouchmobile.com/booking-form/?provider_id={p.id}&provider_name={encoded_name}&provider_phone={encoded_phone}'
+            
+            provider_data[p.id] = {
+                'name': p.name,
+                'phone': p.phone,
+                'booking_url': booking_url
+            }
+            
+            booking_urls.append(booking_url)
+        
+        return jsonify({
+            'status': 'success',
+            'total_providers': len(providers),
+            'providers': provider_data,
+            'booking_urls_only': booking_urls
+        })
+        
+    except Exception as e:
+        print(f"Error listing providers: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     # Run the app (background tasks already started above)
